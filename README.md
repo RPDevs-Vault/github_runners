@@ -17,12 +17,54 @@ The fleet is configured as a multi-tenant grid supporting:
 * **Apt Cache**: Mounted to NAS (`/mnt/sharedroot/data/apt-cache`) to reduce redundant package downloads across the fleet.
 * **Outputs**: Mounted to NAS (`/mnt/sharedroot/github_runners/<node>`) for persistent artifact storage.
 
-## Deployment
-Each node runs a `docker-compose.yml` that instantiates listeners for each scope.
-Images are verified and pulled from **GHCR**: `ghcr.io/rpdevs-vault/runner-linux-builder:latest`.
+---
 
+## 🚀 Deployment Instructions
+
+### 1. Initial Sync
+On the target machine (llmadmin01 or T430), ensure you have the latest configurations:
 ```bash
-# Example Deploy
-cd llmadmin01
+cd /mnt/data/github_runners # (or /mnt/largedata/github_runners on llmadmin01)
+git pull origin main
+```
+
+### 2. "Activate" Node Configuration
+Since this repository manages multiple nodes, you must link the correct configuration to the root of your local folder:
+```bash
+# On T430:
+ln -sf T430/docker-compose.yml .
+
+# On llmadmin01:
+ln -sf llmadmin01/docker-compose.yml .
+```
+
+### 3. Setup Flex Drive (Zram Writeback)
+Ensure your workspace is fast and expandable:
+```bash
+# On T430 (32G Total, 4G RAM Limit)
+sudo ./setup_flex_zram.sh /mnt/data/github_runners/work /mnt/data/github_runners/workflex/zram_back 4G 32G
+```
+
+### 4. Start Runners
+```bash
+# Ensure GH_PAT is set in your environment
+export GH_PAT=your_token_here
 docker-compose pull && docker-compose up -d
+```
+
+---
+
+## 🛠️ Troubleshooting
+
+### Missing `docker-compose`?
+If `docker-compose` is not installed on your system:
+```bash
+sudo apt-get update
+sudo apt-get install -y docker-compose
+```
+
+### Permission Denied on Work Dir?
+If the runners fail to start with permission errors:
+```bash
+sudo chown -R 1000:1000 /mnt/data/github_runners/work
 ```
