@@ -12,10 +12,21 @@ The fleet is configured as a multi-tenant grid supporting:
 1. **llmadmin01**: High-performance primary node (10 threads, 16GB RAM allocation).
 2. **T430**: Auxiliary/Parallel node (3 CPUs, 4GB RAM allocation).
 
-## Storage Architecture
-* **Working Directories (`_work`)**: Mounted to compressed `zram` RAM disks on each host (`/mnt/data/github_runners/work` and `/mnt/largedata/github_runners/work`) for ultra-fast, isolated compilation.
-* **Apt Cache**: Mounted to NAS (`/mnt/sharedroot/data/apt-cache`) to reduce redundant package downloads across the fleet.
-* **Outputs**: Mounted to NAS (`/mnt/sharedroot/github_runners/<node>`) for persistent artifact storage.
+## Thin Runner Architecture
+The fleet uses a **"Thin Runner"** model where multi-gigabyte SDKs and toolchains are not baked into the Docker image. Instead, they are stored as centralized tarballs in `/mnt/sharedroot/github_runners/shared/appdata` and automatically staged to the runner's local fast storage (SSD/Zram) on startup.
+
+### Label-Based Auto-Provisioning
+The `entrypoint.sh` script detects the runner's `RUNNER_LABELS` and automatically extracts the required dependencies:
+*   **`linux64`**: Provisions OpenJDK 17, Node.js 24, and pre-compiled Kodi Depends for Linux.
+*   **`android-arm64`**: Provisions Android SDK/NDK, OpenJDK 17, and Android Kodi Depends.
+*   **`osx64`**: Provisions macOS Kodi Depends (when running on self-hosted).
+
+## Depends-as-a-Service (DaaS)
+Kodi's `tools/depends` system is pre-compiled weekly via the **Build and Archive Kodi Depends** workflow in this repository. 
+
+*   **Workflow**: `.github/workflows/build-depends.yml`
+*   **Output Path**: `shared/appdata/kodi-depends/<os>/depends.tar.gz`
+*   **Benefit**: Reduces Kodi Core build times from 60+ minutes to under 15 minutes.
 
 ---
 
