@@ -1,0 +1,84 @@
+name: Build and Archive Kodi Depends
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Weekly on Sunday at midnight
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Kodi Branch (master, Omega, etc.)'
+        required: true
+        default: 'master'
+      platform:
+        description: 'Platform (android-arm64, osx64, linux64)'
+        required: true
+        default: 'all'
+
+permissions:
+  contents: write
+
+jobs:
+  matrix-prep:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          if [ "${{ github.event.inputs.platform }}" == "all" ] || [ -z "${{ github.event.inputs.platform }}" ]; then
+            echo 'matrix=["android-arm64", "osx64", "linux64"]' >> $GITHUB_OUTPUT
+          else
+            echo 'matrix=["${{ github.event.inputs.platform }}"]' >> $GITHUB_OUTPUT
+          fi
+
+  build-depends:
+    needs: matrix-prep
+    name: Build Depends (${{ matrix.platform }})
+    runs-on: ${{ (matrix.platform == 'osx64' && 'macos-latest') || fromJSON('["self-hosted", "linux64"]') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJSON(needs.matrix-prep.outputs.matrix) }}
+    steps:
+      - name: Checkout Kodi
+        uses: actions/checkout@v4
+        with:
+          repository: xbmc/xbmc
+          ref: ${{ github.event.inputs.branch || 'master' }}
+          path: source/xbmc
+
+      - name: Install macOS Dependencies
+        if: ${{ matrix.platform == 'osx64' }}
+        run: brew install cmake ninja nasm gettext coreutils groff
+
+      - name: Build Depends
+        run: |
+          mkdir -p xbmc-deps
+          cd source/xbmc/tools/depends
+          ./bootstrap
+          case "${{ matrix.platform }}" in
+            android-arm64) export CONFIG_FLAGS="--host=aarch64-linux-android --with-sdk-path=/opt/android-sdk --with-ndk-path=/opt/android-sdk/ndk/25.2.9519653" ;;
+            osx64) 
+              export CONFIG_FLAGS="--with-platform=macos"
+              export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
+              ;;
+            linux64) export CONFIG_FLAGS="--host=x86_64-linux-gnu --with-rendersystem=gl" ;;
+          esac
+          ./configure --prefix=${{ github.workspace }}/xbmc-deps $CONFIG_FLAGS
+          make -j$(nproc || sysctl -n hw.ncpu)
+
+      - name: Archive and Stage Depends
+        run: |
+          tar -czf depends.tar.gz -C xbmc-deps .
+          # If running on our self-hosted infrastructure, also stage it to the shared appdata
+          if [ -d "/home/runner/shared/appdata" ]; then
+             mkdir -p /home/runner/shared/appdata/kodi-depends/${{ matrix.platform }}
+             cp depends.tar.gz /home/runner/shared/appdata/kodi-depends/${{ matrix.platform }}/depends.tar.gz
+             echo "✅ Staged to /home/runner/shared/appdata/kodi-depends/${{ matrix.platform }}/depends.tar.gz"
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: depends-${{ matrix.platform }}-${{ github.event.inputs.branch || 'master' }}
+          path: depends.tar.gz
