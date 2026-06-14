@@ -3,7 +3,7 @@ x-runner-base: &runner-base
   restart: always
   volumes:
     # --- Centralized Shared AppData (SDKs, Toolchains) ---
-    - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/shared/appdata
+    - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
     # --- Shared Long-Term Cache ---
     - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
     - /mnt/sharedroot/github_runners/shared/ccache:/home/runner/.ccache
@@ -18,6 +18,7 @@ x-runner-base: &runner-base
 
 services:
   # --- RPDevs-Builds (Primary Build Org) ---
+  # Heavy Builds migrate to direct NVMe (SSD) to avoid Zram instability during peak I/O
   builds-heavy:
     <<: *runner-base
     container_name: builds-heavy-01
@@ -28,18 +29,13 @@ services:
       - RUNNER_LABELS=self-hosted,linux,heavy,linux64
       - CCACHE_DIR=/home/runner/.ccache
     volumes:
-      - /mnt/largedata/github_runners/work/builds-heavy:/home/runner/_work
-      # Re-declaring shared volumes to ensure override precedence and path clarity
+      - /mnt/largedata/github_runners/work_ssd/builds-heavy:/home/runner/_work
+      # Shared volumes...
       - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
       - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
       - /mnt/sharedroot/github_runners/shared/ccache:/home/runner/.ccache
       - /mnt/sharedroot/github_runners/shared/kodi-depends:/home/runner/.kodi-depends
-      - /mnt/sharedroot/github_runners/shared/go-cache:/home/runner/go
-      - /mnt/sharedroot/github_runners/shared/npm-cache:/home/runner/.npm
-      - /mnt/sharedroot/github_runners/shared/cargo-home:/home/runner/.cargo
       - /mnt/sharedroot/github_runners/shared:/home/runner/shared
-      - /mnt/sharedroot/github_runners/llmadmin01:/home/runner/outputs
-      - /var/run/docker.sock:/var/run/docker.sock
     deploy:
       resources:
         limits:
@@ -55,14 +51,7 @@ services:
       - RUNNER_NAME=llmadmin-builds-lite-01
       - RUNNER_LABELS=self-hosted,linux,lite,lightweight
     volumes:
-      - /mnt/largedata/github_runners/work/builds-lite:/home/runner/_work
-      - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
-      - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
-      - /mnt/sharedroot/github_runners/shared/ccache:/home/runner/.ccache
-      - /mnt/sharedroot/github_runners/shared/kodi-depends:/home/runner/.kodi-depends
-      - /mnt/sharedroot/github_runners/shared:/home/runner/shared
-      - /mnt/sharedroot/github_runners/llmadmin01:/home/runner/outputs
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /mnt/largedata/github_runners/work_ssd/builds-lite:/home/runner/_work
     deploy:
       resources:
         limits:
@@ -79,14 +68,13 @@ services:
       - RUNNER_NAME=llmadmin-vault-heavy-01
       - RUNNER_LABELS=self-hosted,linux,heavy,linux64
     volumes:
-      - /mnt/largedata/github_runners/work/vault-heavy:/home/runner/_work
+      - /mnt/largedata/github_runners/work_ssd/vault-heavy:/home/runner/_work
+      # Shared volumes...
       - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
       - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
       - /mnt/sharedroot/github_runners/shared/ccache:/home/runner/.ccache
       - /mnt/sharedroot/github_runners/shared/kodi-depends:/home/runner/.kodi-depends
       - /mnt/sharedroot/github_runners/shared:/home/runner/shared
-      - /mnt/sharedroot/github_runners/llmadmin01:/home/runner/outputs
-      - /var/run/docker.sock:/var/run/docker.sock
     deploy:
       resources:
         limits:
@@ -102,12 +90,7 @@ services:
       - RUNNER_NAME=llmadmin-vault-lite-01
       - RUNNER_LABELS=self-hosted,linux,lite,lightweight
     volumes:
-      - /mnt/largedata/github_runners/work/vault-lite:/home/runner/_work
-      - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
-      - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
-      - /mnt/sharedroot/github_runners/shared:/home/runner/shared
-      - /mnt/sharedroot/github_runners/llmadmin01:/home/runner/outputs
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /mnt/largedata/github_runners/work_ssd/vault-lite:/home/runner/_work
     deploy:
       resources:
         limits:
@@ -125,12 +108,7 @@ services:
       - RUNNER_NAME=llmadmin-iamrpdev-lite-01
       - RUNNER_LABELS=self-hosted,linux,lite,lightweight
     volumes:
-      - /mnt/largedata/github_runners/work/iamrpdev-lite:/home/runner/_work
-      - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
-      - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
-      - /mnt/sharedroot/github_runners/shared:/home/runner/shared
-      - /mnt/sharedroot/github_runners/llmadmin01:/home/runner/outputs
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /mnt/largedata/github_runners/work_ssd/user-lite:/home/runner/_work
     deploy:
       resources:
         limits:
