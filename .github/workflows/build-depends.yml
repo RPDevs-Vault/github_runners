@@ -61,6 +61,8 @@ jobs:
             osx64) 
               export CONFIG_FLAGS="--with-platform=macos"
               export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
+              export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
+              export CXXFLAGS="$CFLAGS"
               ;;
             linux64) export CONFIG_FLAGS="--host=x86_64-linux-gnu --with-rendersystem=gl" ;;
           esac
