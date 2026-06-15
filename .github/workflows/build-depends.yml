@@ -57,16 +57,13 @@ jobs:
           mkdir -p xbmc-deps
           cd source/xbmc/tools/depends
           
-          # macOS/Darwin Patch for libgpg-error
+          # macOS/Darwin Patches
           if [[ "${{ matrix.platform }}" == "osx64" || "${{ matrix.platform }}" == "ios" || "${{ matrix.platform }}" == "tvos" ]]; then
-             echo "Applying Darwin kernel version patch for libgpg-error..."
-             # Create a compatible header for Darwin 24 (Sequoia) if it doesn't exist
-             # We use the generic apple-darwin one as a base
-             mkdir -p target/libgpg-error/macosx15.5_arm64-target-debug/src/syscfg/
-             # Note: During build, Kodi's depends system extracts the tarball. 
-             # We need to patch the Makefile or the extraction process.
-             # Easier: Patch the libgpg-error Makefile to symlink the header.
+             echo "Applying Darwin kernel version and ASM patches..."
+             # Fix libgpg-error (Darwin 24 Sequoia support)
              sed -i '' 's/$(MAKE) -C $(PLATFORM)/mkdir -p $(PLATFORM)\/src\/syscfg \&\& cp -v $(PLATFORM)\/src\/syscfg\/lock-obj-pub.aarch64-apple-darwin.h $(PLATFORM)\/src\/syscfg\/lock-obj-pub.darwin24.6.0.h || true \&\& $(MAKE) -C $(PLATFORM)/' target/libgpg-error/Makefile || true
+             # Fix libgcrypt (Disable ASM for ARM64 stability)
+             sed -i '' 's/$(CONFIGURE)/$(CONFIGURE) --disable-asm/' target/libgcrypt/Makefile || true
           fi
 
           ./bootstrap
@@ -75,27 +72,26 @@ jobs:
             osx64) 
               export CONFIG_FLAGS="--with-platform=macos"
               export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
+              export LDFLAGS="-L$(brew --prefix gettext)/lib -lintl"
+              export LIBS="-lintl"
               export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
               export CXXFLAGS="$CFLAGS"
-              export LDFLAGS="-L$(brew --prefix gettext)/lib -lintl"
-              # Disable libgcrypt assembly for ARM64 to prevent symbol mismatch in Xcode 16
-              sed -i '' 's/$(CONFIGURE)/$(CONFIGURE) --disable-asm/' target/libgcrypt/Makefile || true
               ;;
             ios)
               export CONFIG_FLAGS="--with-platform=ios --host=aarch64-apple-darwin"
               export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
+              export LDFLAGS="-L$(brew --prefix gettext)/lib -lintl"
+              export LIBS="-lintl"
               export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
               export CXXFLAGS="$CFLAGS"
-              export LDFLAGS="-L$(brew --prefix gettext)/lib -lintl"
-              sed -i '' 's/$(CONFIGURE)/$(CONFIGURE) --disable-asm/' target/libgcrypt/Makefile || true
               ;;
             tvos)
               export CONFIG_FLAGS="--with-platform=tvos --host=aarch64-apple-darwin"
               export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
+              export LDFLAGS="-L$(brew --prefix gettext)/lib -lintl"
+              export LIBS="-lintl"
               export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
               export CXXFLAGS="$CFLAGS"
-              export LDFLAGS="-L$(brew --prefix gettext)/lib -lintl"
-              sed -i '' 's/$(CONFIGURE)/$(CONFIGURE) --disable-asm/' target/libgcrypt/Makefile || true
               ;;
             linux64) export CONFIG_FLAGS="--host=x86_64-linux-gnu --with-rendersystem=gl" ;;
             linux-arm64) export CONFIG_FLAGS="--host=aarch64-linux-gnu --with-rendersystem=gles" ;;
