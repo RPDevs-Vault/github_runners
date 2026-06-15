@@ -69,8 +69,8 @@ jobs:
           # Global linux-arm64/android-arm64 fixes
           if [[ "${{ matrix.platform }}" == "linux-arm64" || "${{ matrix.platform }}" == "android-arm64" ]]; then
              echo "Applying cross-compilation fixes for libusb..."
-             # Fix libusb Makefile to use --host and pass CONFIGURE_FLAGS
-             sed -i 's/.\/configure/.\/configure --host=$(HOST) $(CONFIGURE_FLAGS)/' target/libusb/Makefile || true
+             # Fix libusb Makefile to use --host by targeting the unique --disable-build-docs string
+             sed -i 's/--disable-build-docs/--host=$(HOST) --disable-build-docs/' target/libusb/Makefile || true
           fi
 
           # Fix python3 linking with libintl on macOS/Apple
