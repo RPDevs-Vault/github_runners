@@ -64,19 +64,24 @@ jobs:
              sed -i '' 's/$(MAKE) -C $(PLATFORM)/mkdir -p $(PLATFORM)\/src\/syscfg \&\& cp -v $(PLATFORM)\/src\/syscfg\/lock-obj-pub.aarch64-apple-darwin.h $(PLATFORM)\/src\/syscfg\/lock-obj-pub.darwin24.6.0.h || true \&\& $(MAKE) -C $(PLATFORM)/' target/libgpg-error/Makefile || true
              # Fix libgcrypt (Disable ASM for ARM64 stability)
              sed -i '' 's/$(CONFIGURE)/$(CONFIGURE) --disable-asm/' target/libgcrypt/Makefile || true
-             fi
+          fi
 
-             # Global linux-arm64/android-arm64 fixes
-             if [[ "${{ matrix.platform }}" == "linux-arm64" || "${{ matrix.platform }}" == "android-arm64" ]]; then
+          # Global linux-arm64/android-arm64 fixes
+          if [[ "${{ matrix.platform }}" == "linux-arm64" || "${{ matrix.platform }}" == "android-arm64" ]]; then
              echo "Applying cross-compilation fixes for libusb..."
-             # Fix libusb Makefile to use --host
-             sed -i 's/--disable-build-docs/--disable-build-docs --host=$(HOST)/' target/libusb/Makefile || true
-             # Disable libusb tests that fail to link during cross-compile
+             # Fix libusb Makefile to use --host and disable tests more robustly
+             sed -i 's/.\/configure/.\/configure --host=$(HOST)/' target/libusb/Makefile || true
              sed -i 's/all: $(LIBDYLIB) .installed-$(PLATFORM)/all: .installed-$(PLATFORM)/' target/libusb/Makefile || true
              sed -i 's/$(LIBDYLIB): .configured-$(PLATFORM)/# $(LIBDYLIB): .configured-$(PLATFORM)/' target/libusb/Makefile || true
-             fi
+          fi
 
-             ./bootstrap
+          # Fix python3 linking with libintl on macOS/Apple
+          if [[ "${{ matrix.platform }}" == "osx64" || "${{ matrix.platform }}" == "ios" || "${{ matrix.platform }}" == "tvos" ]]; then
+             echo "Applying libintl linking fix for python3..."
+             sed -i '' 's/export LIBS=$(LINK_ICONV)/export LIBS=$(LINK_ICONV) $(LINK_INTL)/' target/python3/Makefile || true
+          fi
+
+          ./bootstrap
 
           case "${{ matrix.platform }}" in
             android-arm64) export CONFIG_FLAGS="--host=aarch64-linux-android --with-sdk-path=/opt/android-sdk --with-ndk-path=/opt/android-sdk/ndk/25.2.9519653" ;;
