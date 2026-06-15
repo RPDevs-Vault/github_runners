@@ -40,7 +40,7 @@ services:
       resources:
         limits:
           cpus: '8'
-          memory: 8G
+          memory: 12G
 
   builds-lite:
     <<: *runner-base
@@ -78,8 +78,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '4'
-          memory: 4G
+          cpus: '8'
+          memory: 12G
 
   vault-lite:
     <<: *runner-base
