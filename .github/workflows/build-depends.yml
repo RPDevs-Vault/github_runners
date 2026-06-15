@@ -77,18 +77,25 @@ jobs:
               export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
               export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
               export CXXFLAGS="$CFLAGS"
+              export LDFLAGS="-L$(brew --prefix gettext)/lib -lintl"
+              # Disable libgcrypt assembly for ARM64 to prevent symbol mismatch in Xcode 16
+              sed -i '' 's/$(CONFIGURE)/$(CONFIGURE) --disable-asm/' target/libgcrypt/Makefile || true
               ;;
             ios)
               export CONFIG_FLAGS="--with-platform=ios --host=aarch64-apple-darwin"
               export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
               export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
               export CXXFLAGS="$CFLAGS"
+              export LDFLAGS="-L$(brew --prefix gettext)/lib -lintl"
+              sed -i '' 's/$(CONFIGURE)/$(CONFIGURE) --disable-asm/' target/libgcrypt/Makefile || true
               ;;
             tvos)
               export CONFIG_FLAGS="--with-platform=tvos --host=aarch64-apple-darwin"
               export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
               export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
               export CXXFLAGS="$CFLAGS"
+              export LDFLAGS="-L$(brew --prefix gettext)/lib -lintl"
+              sed -i '' 's/$(CONFIGURE)/$(CONFIGURE) --disable-asm/' target/libgcrypt/Makefile || true
               ;;
             linux64) export CONFIG_FLAGS="--host=x86_64-linux-gnu --with-rendersystem=gl" ;;
             linux-arm64) export CONFIG_FLAGS="--host=aarch64-linux-gnu --with-rendersystem=gles" ;;
