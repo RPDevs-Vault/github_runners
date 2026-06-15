@@ -10,7 +10,7 @@ on:
         required: true
         default: 'master'
       platform:
-        description: 'Platform (android-arm64, osx64, linux64)'
+        description: 'Platform (android-arm64, osx64, linux64, win64, linux-arm64, ios, tvos)'
         required: true
         default: 'all'
 
@@ -26,7 +26,7 @@ jobs:
       - id: set-matrix
         run: |
           if [ "${{ github.event.inputs.platform }}" == "all" ] || [ -z "${{ github.event.inputs.platform }}" ]; then
-            echo 'matrix=["android-arm64", "osx64", "linux64"]' >> $GITHUB_OUTPUT
+            echo 'matrix=["android-arm64", "osx64", "linux64", "win64", "linux-arm64", "ios", "tvos"]' >> $GITHUB_OUTPUT
           else
             echo 'matrix=["${{ github.event.inputs.platform }}"]' >> $GITHUB_OUTPUT
           fi
@@ -34,7 +34,7 @@ jobs:
   build-depends:
     needs: matrix-prep
     name: Build Depends (${{ matrix.platform }})
-    runs-on: ${{ (matrix.platform == 'osx64' && 'macos-latest') || fromJSON('["self-hosted", "linux64"]') }}
+    runs-on: ${{ (matrix.platform == 'osx64' || matrix.platform == 'ios' || matrix.platform == 'tvos') && 'macos-latest' || (matrix.platform == 'win64' && 'windows-2022') || fromJSON('["self-hosted", "linux64"]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -48,13 +48,27 @@ jobs:
           path: source/xbmc
 
       - name: Install macOS Dependencies
-        if: ${{ matrix.platform == 'osx64' }}
+        if: ${{ matrix.platform == 'osx64' || matrix.platform == 'ios' || matrix.platform == 'tvos' }}
         run: brew install cmake ninja nasm gettext coreutils groff
 
-      - name: Build Depends
+      - name: Build Depends (Unix)
+        if: ${{ matrix.platform != 'win64' }}
         run: |
           mkdir -p xbmc-deps
           cd source/xbmc/tools/depends
+          
+          # macOS/Darwin Patch for libgpg-error
+          if [[ "${{ matrix.platform }}" == "osx64" || "${{ matrix.platform }}" == "ios" || "${{ matrix.platform }}" == "tvos" ]]; then
+             echo "Applying Darwin kernel version patch for libgpg-error..."
+             # Create a compatible header for Darwin 24 (Sequoia) if it doesn't exist
+             # We use the generic apple-darwin one as a base
+             mkdir -p target/libgpg-error/macosx15.5_arm64-target-debug/src/syscfg/
+             # Note: During build, Kodi's depends system extracts the tarball. 
+             # We need to patch the Makefile or the extraction process.
+             # Easier: Patch the libgpg-error Makefile to symlink the header.
+             sed -i '' 's/$(MAKE) -C $(PLATFORM)/mkdir -p $(PLATFORM)\/src\/syscfg \&\& cp -v $(PLATFORM)\/src\/syscfg\/lock-obj-pub.aarch64-apple-darwin.h $(PLATFORM)\/src\/syscfg\/lock-obj-pub.darwin24.6.0.h || true \&\& $(MAKE) -C $(PLATFORM)/' target/libgpg-error/Makefile || true
+          fi
+
           ./bootstrap
           case "${{ matrix.platform }}" in
             android-arm64) export CONFIG_FLAGS="--host=aarch64-linux-android --with-sdk-path=/opt/android-sdk --with-ndk-path=/opt/android-sdk/ndk/25.2.9519653" ;;
@@ -64,12 +78,35 @@ jobs:
               export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
               export CXXFLAGS="$CFLAGS"
               ;;
+            ios)
+              export CONFIG_FLAGS="--with-platform=ios --host=aarch64-apple-darwin"
+              export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
+              export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
+              export CXXFLAGS="$CFLAGS"
+              ;;
+            tvos)
+              export CONFIG_FLAGS="--with-platform=tvos --host=aarch64-apple-darwin"
+              export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
+              export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
+              export CXXFLAGS="$CFLAGS"
+              ;;
             linux64) export CONFIG_FLAGS="--host=x86_64-linux-gnu --with-rendersystem=gl" ;;
+            linux-arm64) export CONFIG_FLAGS="--host=aarch64-linux-gnu --with-rendersystem=gles" ;;
           esac
           ./configure --prefix=${{ github.workspace }}/xbmc-deps $CONFIG_FLAGS
           make -j$(nproc || sysctl -n hw.ncpu)
 
+      - name: Build Depends (Windows)
+        if: ${{ matrix.platform == 'win64' }}
+        shell: cmd
+        run: |
+          cd source\xbmc\tools\buildsteps\windows\x64
+          call download-dependencies.bat
+          mkdir %GITHUB_WORKSPACE%\xbmc-deps
+          xcopy /E /I /Y %GITHUB_WORKSPACE%\source\xbmc\project\BuildDependencies %GITHUB_WORKSPACE%\xbmc-deps
+
       - name: Archive and Stage Depends
+        shell: bash
         run: |
           tar -czf depends.tar.gz -C xbmc-deps .
           # If running on our self-hosted infrastructure, also stage it to the shared appdata
