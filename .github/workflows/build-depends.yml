@@ -69,16 +69,17 @@ jobs:
           # Global linux-arm64/android-arm64 fixes
           if [[ "${{ matrix.platform }}" == "linux-arm64" || "${{ matrix.platform }}" == "android-arm64" ]]; then
              echo "Applying cross-compilation fixes for libusb..."
-             # Fix libusb Makefile to use --host and skip building tests
+             # Fix libusb Makefile to use --host
              sed -i 's/.\/configure/.\/configure --host=$(HOST)/' target/libusb/Makefile || true
-             sed -i 's/$(MAKE) -C $(PLATFORM)/$(MAKE) -C $(PLATFORM) libusb.la/' target/libusb/Makefile || true
+             # Build ONLY the library, skipping tests that fail to link
+             sed -i 's/$(MAKE) -C $(PLATFORM)$/$(MAKE) -C $(PLATFORM) libusb.la/' target/libusb/Makefile || true
           fi
 
           # Fix python3 linking with libintl on macOS/Apple
           if [[ "${{ matrix.platform }}" == "osx64" || "${{ matrix.platform }}" == "ios" || "${{ matrix.platform }}" == "tvos" ]]; then
              echo "Applying libintl linking fix for python3..."
-             # Hardcode -lintl as LINK_INTL detection can be flaky in sub-makes
-             sed -i '' 's/\$(LINK_ICONV)/\$(LINK_ICONV) -lintl/' target/python3/Makefile || true
+             # Use a more robust regex to replace the LIBS export and force -lintl
+             sed -i '' 's/export LIBS=.*/export LIBS=$(LINK_ICONV) -lintl/' target/python3/Makefile || true
           fi
 
           ./bootstrap
