@@ -71,27 +71,19 @@ jobs:
             android-arm64) export CONFIG_FLAGS="--host=aarch64-linux-android --with-sdk-path=/opt/android-sdk --with-ndk-path=/opt/android-sdk/ndk/25.2.9519653" ;;
             osx64) 
               export CONFIG_FLAGS="--with-platform=macos"
-              export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
-              export LDFLAGS="-L$(brew --prefix gettext)/lib -lintl"
-              export LIBS="-lintl"
-              export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
-              export CXXFLAGS="$CFLAGS"
+              # Surgical Makefile Patches
+              sed -i '' 's/$(CONFIGURE)/$(CONFIGURE) --disable-asm/' target/libgcrypt/Makefile
+              sed -i '' 's/$(MAKE) -C $(PLATFORM)/mkdir -p $(PLATFORM)\/src\/syscfg \&\& cp -v $(PLATFORM)\/src\/syscfg\/lock-obj-pub.aarch64-apple-darwin.h $(PLATFORM)\/src\/syscfg\/lock-obj-pub.darwin24.6.0.h || true \&\& $(MAKE) -C $(PLATFORM)/' target/libgpg-error/Makefile
               ;;
             ios)
               export CONFIG_FLAGS="--with-platform=ios --host=aarch64-apple-darwin"
-              export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
-              export LDFLAGS="-L$(brew --prefix gettext)/lib -lintl"
-              export LIBS="-lintl"
-              export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
-              export CXXFLAGS="$CFLAGS"
+              sed -i '' 's/$(CONFIGURE)/$(CONFIGURE) --disable-asm/' target/libgcrypt/Makefile
+              sed -i '' 's/$(MAKE) -C $(PLATFORM)/mkdir -p $(PLATFORM)\/src\/syscfg \&\& cp -v $(PLATFORM)\/src\/syscfg\/lock-obj-pub.aarch64-apple-darwin.h $(PLATFORM)\/src\/syscfg\/lock-obj-pub.darwin24.6.0.h || true \&\& $(MAKE) -C $(PLATFORM)/' target/libgpg-error/Makefile
               ;;
             tvos)
               export CONFIG_FLAGS="--with-platform=tvos --host=aarch64-apple-darwin"
-              export PATH="$(brew --prefix gettext)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
-              export LDFLAGS="-L$(brew --prefix gettext)/lib -lintl"
-              export LIBS="-lintl"
-              export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-function-pointer-types -Wno-error=int-conversion"
-              export CXXFLAGS="$CFLAGS"
+              sed -i '' 's/$(CONFIGURE)/$(CONFIGURE) --disable-asm/' target/libgcrypt/Makefile
+              sed -i '' 's/$(MAKE) -C $(PLATFORM)/mkdir -p $(PLATFORM)\/src\/syscfg \&\& cp -v $(PLATFORM)\/src\/syscfg\/lock-obj-pub.aarch64-apple-darwin.h $(PLATFORM)\/src\/syscfg\/lock-obj-pub.darwin24.6.0.h || true \&\& $(MAKE) -C $(PLATFORM)/' target/libgpg-error/Makefile
               ;;
             linux64) export CONFIG_FLAGS="--host=x86_64-linux-gnu --with-rendersystem=gl" ;;
             linux-arm64) export CONFIG_FLAGS="--host=aarch64-linux-gnu --with-rendersystem=gles" ;;
