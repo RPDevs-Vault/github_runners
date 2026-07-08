@@ -4,6 +4,7 @@ x-runner-base: &runner-base
   volumes:
     # --- Centralized Shared AppData (SDKs, Toolchains) ---
     - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
+    - /mnt/sharedroot/github_runners/android-sdk:/opt/android-sdk
     # --- Shared Long-Term Cache ---
     - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
     - /mnt/sharedroot/github_runners/shared/ccache:/home/runner/.ccache
@@ -17,72 +18,36 @@ x-runner-base: &runner-base
     - /var/run/docker.sock:/var/run/docker.sock
 
 services:
-  # --- RPDevs-Builds (Primary Build Org) ---
-  builds-medium:
+  # --- RPDevs-Builds (Primary Build Org Super Runner on T430) ---
+  builds-super:
     <<: *runner-base
-    container_name: builds-medium-01
+    container_name: builds-super-02
     environment:
       - GH_OWNER=RPDevs-Builds
       - GH_TOKEN=${GH_PAT}
-      - RUNNER_NAME=t430-builds-medium-01
-      - RUNNER_LABELS=self-hosted,linux,medium,linux64
+      - RUNNER_NAME=t430-builds-super-02
+      - RUNNER_LABELS=self-hosted,linux64,lightweight,medium,heavy
     volumes:
-      - /mnt/data/github_runners/work/builds-medium:/home/runner/_work
-      # Explicit shared volumes for clarity on T430
-      - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
-      - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
-      - /mnt/sharedroot/github_runners/shared/ccache:/home/runner/.ccache
-      - /mnt/sharedroot/github_runners/shared/kodi-depends:/home/runner/.kodi-depends
-      - /mnt/sharedroot/github_runners/shared:/home/runner/shared
-      - /mnt/sharedroot/github_runners/T430:/home/runner/outputs
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /mnt/data/github_runners/work/builds-super:/home/runner/_work
     deploy:
       resources:
         limits:
           cpus: '2'
-          memory: 2G
+          memory: 3G
 
-  builds-lite:
+  # --- RPDevs-Vault (Archival/Management Org Super Runner on T430) ---
+  vault-super:
     <<: *runner-base
-    container_name: builds-lite-01
-    environment:
-      - GH_OWNER=RPDevs-Builds
-      - GH_TOKEN=${GH_PAT}
-      - RUNNER_NAME=t430-builds-lite-01
-      - RUNNER_LABELS=self-hosted,linux,lite,lightweight
-    volumes:
-      - /mnt/data/github_runners/work/builds-lite:/home/runner/_work
-      - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
-      - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
-      - /mnt/sharedroot/github_runners/shared/ccache:/home/runner/.ccache
-      - /mnt/sharedroot/github_runners/shared:/home/runner/shared
-      - /mnt/sharedroot/github_runners/T430:/home/runner/outputs
-      - /var/run/docker.sock:/var/run/docker.sock
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-
-  # --- RPDevs-Vault (Archival/Management Org) ---
-  vault-medium:
-    <<: *runner-base
-    container_name: vault-medium-01
+    container_name: vault-super-02
     environment:
       - GH_OWNER=RPDevs-Vault
       - GH_TOKEN=${GH_PAT}
-      - RUNNER_NAME=t430-vault-medium-01
-      - RUNNER_LABELS=self-hosted,linux,medium,linux64
+      - RUNNER_NAME=t430-vault-super-02
+      - RUNNER_LABELS=self-hosted,linux64,lightweight,medium,heavy
     volumes:
-      - /mnt/data/github_runners/work/vault-medium:/home/runner/_work
-      - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
-      - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
-      - /mnt/sharedroot/github_runners/shared/ccache:/home/runner/.ccache
-      - /mnt/sharedroot/github_runners/shared:/home/runner/shared
-      - /mnt/sharedroot/github_runners/T430:/home/runner/outputs
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /mnt/data/github_runners/work/vault-super:/home/runner/_work
     deploy:
       resources:
         limits:
           cpus: '1'
-          memory: 1G
+          memory: 1.5G

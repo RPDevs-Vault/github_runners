@@ -4,6 +4,7 @@ x-runner-base: &runner-base
   volumes:
     # --- Centralized Shared AppData (SDKs, Toolchains) ---
     - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
+    - /mnt/sharedroot/github_runners/android-sdk:/opt/android-sdk
     # --- Shared Long-Term Cache ---
     - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
     - /mnt/sharedroot/github_runners/shared/ccache:/home/runner/.ccache
@@ -17,100 +18,39 @@ x-runner-base: &runner-base
     - /var/run/docker.sock:/var/run/docker.sock
 
 services:
-  # --- RPDevs-Builds (Primary Build Org) ---
-  # Heavy Builds migrate to direct NVMe (SSD) to avoid Zram instability during peak I/O
-  builds-heavy:
+  # --- RPDevs-Builds (Primary Build Org Super Runner) ---
+  builds-super:
     <<: *runner-base
-    container_name: builds-heavy-01
+    container_name: builds-super-01
     environment:
       - GH_OWNER=RPDevs-Builds
       - GH_TOKEN=${GH_PAT}
-      - RUNNER_NAME=llmadmin-builds-heavy-v3
-      - RUNNER_LABELS=self-hosted,linux,heavy,linux64
-      - CCACHE_DIR=/home/runner/.ccache
+      - RUNNER_NAME=llmadmin-builds-super-01
+      - RUNNER_LABELS=self-hosted,linux64,lightweight,medium,heavy
     volumes:
-      - /mnt/largedata/github_runners/work_ssd/builds-heavy:/home/runner/_work
-      # Shared volumes...
-      - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
-      - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
-      - /mnt/sharedroot/github_runners/shared/ccache:/home/runner/.ccache
-      - /mnt/sharedroot/github_runners/shared/kodi-depends:/home/runner/.kodi-depends
-      - /mnt/sharedroot/github_runners/shared:/home/runner/shared
-    deploy:
-      resources:
-        limits:
-          cpus: '8'
-          memory: 12G
+      - /mnt/largedata/github_runners/work_ssd/builds-super:/home/runner/_work
 
-  builds-lite:
+  # --- RPDevs-Vault (Archival/Management Org Super Runner) ---
+  vault-super:
     <<: *runner-base
-    container_name: builds-lite-01
-    environment:
-      - GH_OWNER=RPDevs-Builds
-      - GH_TOKEN=${GH_PAT}
-      - RUNNER_NAME=llmadmin-builds-lite-01
-      - RUNNER_LABELS=self-hosted,linux,lite,lightweight
-    volumes:
-      - /mnt/largedata/github_runners/work_ssd/builds-lite:/home/runner/_work
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-
-  # --- RPDevs-Vault (Archival/Management Org) ---
-  vault-heavy:
-    <<: *runner-base
-    container_name: vault-heavy-01
+    container_name: vault-super-01
     environment:
       - GH_OWNER=RPDevs-Vault
       - GH_TOKEN=${GH_PAT}
-      - RUNNER_NAME=llmadmin-vault-heavy-01
-      - RUNNER_LABELS=self-hosted,linux,heavy,linux64
+      - RUNNER_NAME=llmadmin-vault-super-01
+      - RUNNER_LABELS=self-hosted,linux64,lightweight,medium,heavy
     volumes:
-      - /mnt/largedata/github_runners/work_ssd/vault-heavy:/home/runner/_work
-      # Shared volumes...
-      - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
-      - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
-      - /mnt/sharedroot/github_runners/shared/ccache:/home/runner/.ccache
-      - /mnt/sharedroot/github_runners/shared/kodi-depends:/home/runner/.kodi-depends
-      - /mnt/sharedroot/github_runners/shared:/home/runner/shared
-    deploy:
-      resources:
-        limits:
-          cpus: '8'
-          memory: 12G
+      - /mnt/largedata/github_runners/work_ssd/vault-super:/home/runner/_work
 
-  vault-lite:
+  # --- IamRPDev (User Account Super Runner) ---
+  iamrpdev-super:
     <<: *runner-base
-    container_name: vault-lite-01
-    environment:
-      - GH_OWNER=RPDevs-Vault
-      - GH_TOKEN=${GH_PAT}
-      - RUNNER_NAME=llmadmin-vault-lite-01
-      - RUNNER_LABELS=self-hosted,linux,lite,lightweight
-    volumes:
-      - /mnt/largedata/github_runners/work_ssd/vault-lite:/home/runner/_work
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-
-  # --- IamRPDev (User Account) ---
-  user-lite:
-    <<: *runner-base
-    container_name: iamrpdev-lite-01
+    container_name: iamrpdev-super-01
     environment:
       - GH_OWNER=IamRPDev
       - GH_TYPE=user
       - GH_TOKEN=${GH_PAT}
-      - RUNNER_NAME=llmadmin-iamrpdev-lite-01
-      - RUNNER_LABELS=self-hosted,linux,lite,lightweight
+      - RUNNER_NAME=llmadmin-iamrpdev-super-01
+      - RUNNER_LABELS=self-hosted,linux64,lightweight
     volumes:
-      - /mnt/largedata/github_runners/work_ssd/user-lite:/home/runner/_work
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
+      - /mnt/largedata/github_runners/work_ssd/user-super:/home/runner/_work

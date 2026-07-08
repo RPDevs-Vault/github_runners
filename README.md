@@ -2,31 +2,24 @@
 
 This repository manages the deployment configurations for the RPDevs ecosystem build fleet.
 
-## Multi-Tenant Architecture
-The fleet is configured as a multi-tenant grid supporting:
-1. **RPDevs-Vault** (Org): Archival and Infrastructure Management.
-2. **RPDevs-Builds** (Org): High-frequency Kodi Core and Addon Builds.
-3. **IamRPDev** (User): Personal developer actions.
+## Super Runner Multi-Tenant Architecture
+The fleet is configured as a multi-tenant grid using **Super Runners** that share all host resources instead of dividing CPU/Memory limits. Each tenant runs exactly one Super Runner container per node, registered with all relevant resource/platform labels:
+1. **RPDevs-Vault** (Org): Archival and Infrastructure Management. Labeled: `self-hosted, linux64, lightweight, medium, heavy`.
+2. **RPDevs-Builds** (Org): High-frequency Kodi Core and Addon Builds. Labeled: `self-hosted, linux64, lightweight, medium, heavy`.
+3. **IamRPDev** (User): Personal developer actions. Labeled: `self-hosted, linux64, lightweight`.
+
+## Dynamic Fallback System
+All build workflows feature a dynamic pre-job status check (`check-runner`). 
+* If a local runner is **online**, the workflow runs on our high-performance local fleet.
+* If all local runners are **offline**, the workflow automatically falls back to GitHub-hosted runners (`ubuntu-latest` or `macos-latest`) to ensure builds are never blocked.
+* The API calls authenticate using the centralized `GH_TOKEN` secret.
 
 ## Fleet Nodes
-1. **llmadmin01**: High-performance primary node (10 threads, 16GB RAM allocation).
-2. **T430**: Auxiliary/Parallel node (3 CPUs, 4GB RAM allocation).
+1. **llmadmin01**: High-performance primary node (10 threads, 16GB RAM shared dynamically).
+2. **T430**: Auxiliary/Parallel node (3 CPUs, 4.5GB RAM allocated dynamically across two runners).
 
-## Thin Runner Architecture
-The fleet uses a **"Thin Runner"** model where multi-gigabyte SDKs and toolchains are not baked into the Docker image. Instead, they are stored as centralized tarballs in `/mnt/sharedroot/github_runners/shared/appdata` and automatically staged to the runner's local fast storage (SSD/Zram) on startup.
-
-### Label-Based Auto-Provisioning
-The `entrypoint.sh` script detects the runner's `RUNNER_LABELS` and automatically extracts the required dependencies:
-*   **`linux64`**: Provisions OpenJDK 17, Node.js 24, and pre-compiled Kodi Depends for Linux.
-*   **`android-arm64`**: Provisions Android SDK/NDK, OpenJDK 17, and Android Kodi Depends.
-*   **`osx64`**: Provisions macOS Kodi Depends (when running on self-hosted).
-
-## Depends-as-a-Service (DaaS)
-Kodi's `tools/depends` system is pre-compiled weekly via the **Build and Archive Kodi Depends** workflow in this repository. 
-
-*   **Workflow**: `.github/workflows/build-depends.yml`
-*   **Output Path**: `shared/appdata/kodi-depends/<os>/depends.tar.gz`
-*   **Benefit**: Reduces Kodi Core build times from 60+ minutes to under 15 minutes.
+## Centralized AppData
+Multi-gigabyte SDKs and toolchains are stored centrally in `/mnt/sharedroot/github_runners/` (e.g., the pre-staged `/mnt/sharedroot/github_runners/android-sdk` is mounted directly to `/opt/android-sdk`), eliminating setup/copy overhead on startup.
 
 ---
 
