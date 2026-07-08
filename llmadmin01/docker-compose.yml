@@ -12,6 +12,8 @@ x-runner-base: &runner-base
     - /mnt/sharedroot/github_runners/shared/go-cache:/home/runner/go
     - /mnt/sharedroot/github_runners/shared/npm-cache:/home/runner/.npm
     - /mnt/sharedroot/github_runners/shared/cargo-home:/home/runner/.cargo
+    - /mnt/sharedroot/github_runners/shared/pip-cache:/home/runner/.cache/pip
+    - /mnt/sharedroot/github_runners/shared/poetry-cache:/home/runner/.cache/pypoetry
     # --- Node-Specific & Meta ---
     - /mnt/sharedroot/github_runners/shared:/home/runner/shared
     - /mnt/sharedroot/github_runners/llmadmin01:/home/runner/outputs
