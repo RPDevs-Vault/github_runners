@@ -28,7 +28,7 @@ services:
       - GH_OWNER=RPDevs-Builds
       - GH_TOKEN=${GH_PAT}
       - RUNNER_NAME=llmadmin-builds-super-01
-      - RUNNER_LABELS=self-hosted,linux64,lightweight,medium,heavy
+      - RUNNER_LABELS=self-hosted,linux64,medium,heavy
     volumes:
       - /mnt/largedata/github_runners/work_ssd/builds-super:/home/runner/_work
 

@@ -1,55 +1,25 @@
-x-runner-base: &runner-base
-  image: ghcr.io/rpdevs-vault/runner-linux-builder:latest
-  restart: always
-  volumes:
-    # --- Centralized Shared AppData (SDKs, Toolchains) ---
-    - /mnt/sharedroot/github_runners/shared/appdata:/home/runner/appdata
-    - /mnt/sharedroot/github_runners/android-sdk:/opt/android-sdk
-    # --- Shared Long-Term Cache ---
-    - /mnt/sharedroot/github_runners/shared/apt-cache:/var/cache/apt/archives
-    - /mnt/sharedroot/github_runners/shared/ccache:/home/runner/.ccache
-    - /mnt/sharedroot/github_runners/shared/kodi-depends:/home/runner/.kodi-depends
-    - /mnt/sharedroot/github_runners/shared/go-cache:/home/runner/go
-    - /mnt/sharedroot/github_runners/shared/npm-cache:/home/runner/.npm
-    - /mnt/sharedroot/github_runners/shared/cargo-home:/home/runner/.cargo
-    - /mnt/sharedroot/github_runners/shared/pip-cache:/home/runner/.cache/pip
-    - /mnt/sharedroot/github_runners/shared/poetry-cache:/home/runner/.cache/pypoetry
-    # --- Node-Specific & Meta ---
-    - /mnt/sharedroot/github_runners/shared:/home/runner/shared
-    - /mnt/sharedroot/github_runners/T430:/home/runner/outputs
-    - /var/run/docker.sock:/var/run/docker.sock
-
 services:
-  # --- RPDevs-Builds (Primary Build Org Super Runner on T430) ---
-  builds-super:
-    <<: *runner-base
-    container_name: builds-super-02
+  t430-runner:
+    image: ghcr.io/rpdevs-vault/runner-linux-builder:latest
+    container_name: t430-runner
+    restart: always
     environment:
       - GH_OWNER=RPDevs-Builds
       - GH_TOKEN=${GH_PAT}
-      - RUNNER_NAME=t430-builds-super-02
-      - RUNNER_LABELS=self-hosted,linux64,lightweight,medium,heavy
+      - RUNNER_NAME=t430-runner-01
+      - RUNNER_LABELS=self-hosted,Linux,X64,lightweight,t430
+      - CCACHE_DIR=/mnt/ccache
     volumes:
-      - /mnt/data/github_runners/work/builds-super:/home/runner/_work
+      - /mnt/data/github_runners/work/t430-runner:/home/runner/_work
+      - /mnt/sharedroot/github_runners/shared:/home/runner/shared
+      - /mnt/sharedroot/github_runners/T430:/home/runner/outputs
+      - /mnt/sharedroot/data/apt-cache:/var/cache/apt/archives
+      - /mnt/sharedroot/ccache:/mnt/ccache
+      - /var/run/docker.sock:/var/run/docker.sock
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
-          cpus: '2'
-          memory: 3G
-
-  # --- RPDevs-Vault (Archival/Management Org Super Runner on T430) ---
-  vault-super:
-    <<: *runner-base
-    container_name: vault-super-02
-    environment:
-      - GH_OWNER=RPDevs-Vault
-      - GH_TOKEN=${GH_PAT}
-      - RUNNER_NAME=t430-vault-super-02
-      - RUNNER_LABELS=self-hosted,linux64,lightweight,medium,heavy
-    volumes:
-      - /mnt/data/github_runners/work/vault-super:/home/runner/_work
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1.5G
+          cpus: '4'
+          memory: 6G
