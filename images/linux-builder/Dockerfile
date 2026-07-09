@@ -98,5 +98,10 @@ ENV PATH=$PATH:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline
 COPY entrypoint.sh /home/runner/entrypoint.sh
 RUN chmod +x /home/runner/entrypoint.sh
 
+# Pre-create directories that Docker would otherwise create as root for bind-mounts.
+# This prevents permission errors for Go build cache, runner toolchain cache, etc.
+RUN mkdir -p /home/runner/.cache /home/runner/_work /home/runner/go && \
+    chown -R runner:runner /home/runner/.cache /home/runner/_work /home/runner/go
+
 USER runner
 ENTRYPOINT ["/home/runner/entrypoint.sh"]

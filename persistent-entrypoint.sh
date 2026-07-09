@@ -2,6 +2,16 @@
 # GH_OWNER is always the Org/User
 # GH_TOKEN is required
 
+# Ensure _work directory is owned by the runner user (fixes bind-mount root ownership).
+# NOTE: sudo chown will fail silently under no-new-privileges. For hardened containers,
+# ensure host-side directories are pre-owned by UID 1000 (bootstrap.sh handles this).
+if [ -d "/home/runner/_work" ]; then
+    if [ "$(stat -c '%u' /home/runner/_work)" != "$(id -u)" ]; then
+        echo "Fixing _work directory ownership..."
+        sudo chown -R "$(id -u):$(id -g)" /home/runner/_work 2>/dev/null || true
+    fi
+fi
+
 get_token() {
     local ENDPOINT=$1
     local RESPONSE=$(curl -sX POST -w "\n%{http_code}" -H "Authorization: token ${GH_TOKEN}" "$ENDPOINT")
