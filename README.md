@@ -2,21 +2,25 @@
 
 This repository manages the deployment configurations for the RPDevs ecosystem build fleet.
 
-## Super Runner Multi-Tenant Architecture
-The fleet is configured as a multi-tenant grid using **Super Runners** that share all host resources instead of dividing CPU/Memory limits. Each tenant runs exactly one Super Runner container per node, registered with all relevant resource/platform labels:
-1. **RPDevs-Vault** (Org): Archival and Infrastructure Management. Labeled: `self-hosted, linux64, lightweight, medium, heavy`.
-2. **RPDevs-Builds** (Org): High-frequency Kodi Core and Addon Builds. Labeled: `self-hosted, linux64, lightweight, medium, heavy`.
-3. **IamRPDev** (User): Personal developer actions. Labeled: `self-hosted, linux64, lightweight`.
+## Target OS-Specific Builders with GitHub Runner Groups
+The fleet has been refactored from a multi-tenant generic design into a highly targeted, OS-specific architecture utilizing **GitHub Runner Groups**. Each host runs a discrete set of runners representing key target platforms:
+1. **Linux Builders** (`linux-builders` group): Optimized for fast compiling and container builds.
+2. **macOS Builders** (`macos-builders` group): Specialized for macOS/iOS tooling and targets.
+3. **Windows Builders** (`windows-builders` group): Specialized for Windows execution environments.
 
-## Dynamic Fallback System
+Runners are perfectly duplicated across two primary organizations:
+- **RPDevs-Builds**: High-frequency workflows, package builds, and integrations.
+- **RPDevs-Vault**: Archival, management, and governance workflows.
+
+## Dynamic Fallback System & Intelligent Routing
 All build workflows feature a dynamic pre-job status check (`check-runner`). 
 * If a local runner is **online**, the workflow runs on our high-performance local fleet.
 * If all local runners are **offline**, the workflow automatically falls back to GitHub-hosted runners (`ubuntu-latest` or `macos-latest`) to ensure builds are never blocked.
-* The API calls authenticate using the centralized `GH_TOKEN` secret.
+* **Duration-Based Escalation:** Workflows query the GitHub CLI for historical build durations. Workloads historically taking longer than 15 minutes are intelligently escalated from lightweight to heavy runner nodes to save idle compute on lighter nodes.
 
-## Fleet Nodes
-1. **llmadmin01**: High-performance primary node (10 threads, 16GB RAM shared dynamically).
-2. **T430**: Auxiliary/Parallel node (3 CPUs, 4.5GB RAM allocated dynamically across two runners).
+## Fleet Nodes & Hardware Limits
+1. **llmadmin01**: High-performance primary node. Runners are strictly bounded to **6 CPUs** and **12GB RAM** to protect the host workstation's primary performance.
+2. **T430**: Auxiliary/Parallel node. Runners are bounded to **3 CPUs** and **6GB RAM** allocated dynamically.
 
 ## Centralized AppData
 Multi-gigabyte SDKs and toolchains are stored centrally in `/mnt/sharedroot/github_runners/` (e.g., the pre-staged `/mnt/sharedroot/github_runners/android-sdk` is mounted directly to `/opt/android-sdk`), eliminating setup/copy overhead on startup.
