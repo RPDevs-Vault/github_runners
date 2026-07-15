@@ -51,6 +51,7 @@ if [ -e /var/run/docker.sock ]; then
     DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
     sudo groupadd -g $DOCKER_GID docker_host || true
     sudo usermod -aG docker_host runner || true
+    exec sg docker_host "./run.sh"
+else
+    exec ./run.sh
 fi
-
-exec ./run.sh
