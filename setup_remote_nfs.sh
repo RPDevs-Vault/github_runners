@@ -43,9 +43,9 @@ echo "📁 Creating mount directory at /mnt/sharedroot..."
 sudo mkdir -p /mnt/sharedroot
 
 # 5. Configure auto-mount in /etc/fstab
-FSTAB_ENTRY="127.0.0.1:/mnt/sharedroot  /mnt/sharedroot  nfs  port=2049,soft,timeo=100,retrans=2,_netdev,x-systemd.requires=cloudflared-nfs.service  0 0"
+FSTAB_ENTRY="127.0.0.1:/sharedroot  /mnt/sharedroot  nfs  port=2049,soft,timeo=100,retrans=2,_netdev,x-systemd.requires=cloudflared-nfs.service  0 0"
 
-if ! grep -q "127.0.0.1:/mnt/sharedroot" /etc/fstab; then
+if ! grep -q "127.0.0.1:/sharedroot" /etc/fstab; then
     echo "📝 Adding NFS mount to /etc/fstab..."
     echo "$FSTAB_ENTRY" | sudo tee -a /etc/fstab > /dev/null
 else
