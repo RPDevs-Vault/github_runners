@@ -3,10 +3,11 @@
 This repository manages the deployment configurations for the RPDevs ecosystem build fleet.
 
 ## Target OS-Specific Builders with GitHub Runner Groups
-The fleet has been refactored from a multi-tenant generic design into a highly targeted, OS-specific architecture utilizing **GitHub Runner Groups**. Each host runs a discrete set of runners representing key target platforms:
-1. **Linux Builders** (`linux-builders` group): Optimized for fast compiling and container builds.
-2. **macOS Builders** (`macos-builders` group): Specialized for macOS/iOS tooling and targets.
-3. **Windows Builders** (`windows-builders` group): Specialized for Windows execution environments.
+The fleet has been refactored from a multi-tenant generic design into a highly targeted architecture utilizing **GitHub Runner Groups**. Capacity is now explicitly managed through node-specific runner groups to distribute workloads intelligently:
+1. **llmadmin01** (`llmadmin01` group): Heavy-duty nodes optimized for fast compiling and heavy container builds.
+2. **T430** (`T430` group): Lightweight/general-purpose nodes for auxiliary/parallel workflows and housekeeping.
+3. **macOS Builders** (`macos-builders` group): Specialized for macOS/iOS tooling and targets.
+4. **Windows Builders** (`windows-builders` group): Specialized for Windows execution environments.
 
 Runners are perfectly duplicated across two primary organizations:
 - **RPDevs-Builds**: High-frequency workflows, package builds, and integrations.
