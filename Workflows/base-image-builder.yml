@@ -15,7 +15,7 @@ env:
 jobs:
   build-and-scan:
     runs-on:
-      group: linux-builders
+      group: llmadmin01
       labels: [self-hosted, linux, t430]
     permissions:
       contents: read

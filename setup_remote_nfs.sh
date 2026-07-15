@@ -13,9 +13,15 @@ else
     echo "✅ cloudflared is already installed."
 fi
 
-# 2. Create the systemd service
+# 2. Check and configure Cloudflare Access Client credentials
+if [ -z "$CF_ACCESS_CLIENT_ID" ] || [ -z "$CF_ACCESS_CLIENT_SECRET" ]; then
+    echo "❌ Error: CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET environment variables must be set."
+    echo "Usage: CF_ACCESS_CLIENT_ID=xxx CF_ACCESS_CLIENT_SECRET=yyy sudo -E ./setup_remote_nfs.sh"
+    exit 1
+fi
+
 echo "⚙️ Configuring systemd service for Cloudflare Tunnel..."
-cat << 'EOF' | sudo tee /etc/systemd/system/cloudflared-nfs.service > /dev/null
+cat << EOF | sudo tee /etc/systemd/system/cloudflared-nfs.service > /dev/null
 [Unit]
 Description=Cloudflare Tunnel for NFS
 After=network-online.target
@@ -23,8 +29,8 @@ After=network-online.target
 [Service]
 Type=simple
 User=root
-Environment="TUNNEL_SERVICE_AUTH_ID=105344432816f1ea3c0d2c7dab61e02f.access"
-Environment="TUNNEL_SERVICE_AUTH_SECRET=2123c85e999291747f20617fe0811374ef7dc665e9eefa543f4cdb41ac376188"
+Environment="TUNNEL_SERVICE_AUTH_ID=$CF_ACCESS_CLIENT_ID"
+Environment="TUNNEL_SERVICE_AUTH_SECRET=$CF_ACCESS_CLIENT_SECRET"
 ExecStart=/usr/bin/cloudflared access tcp --hostname nfs-sharedroot.iamrp.dev --url 127.0.0.1:2049
 Restart=on-failure
 RestartSec=5
