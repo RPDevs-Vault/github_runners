@@ -16,13 +16,11 @@ if [ -d "$SHARED_APP_DIR" ]; then
         fi
     fi
 
-    # 2. Provision Android SDK (Only if not already mounted at /opt/android-sdk)
-    if [ ! -d "/opt/android-sdk" ] || [ ! -d "/opt/android-sdk/ndk" ]; then
-        if sudo [ -f "$SHARED_APP_DIR/android-sdk.tar.gz" ]; then
-            echo "📦 Extracting Android SDK..."
-            sudo mkdir -p /opt/android-sdk
-            sudo tar -xzf "$SHARED_APP_DIR/android-sdk.tar.gz" -C /opt
-            sudo chown -R runner:runner /opt/android-sdk
+    # 2. Provision Android SDK (Symlink from shared folder)
+    if [ ! -d "/opt/android-sdk" ]; then
+        if sudo [ -d "$SHARED_APP_DIR/android-sdk" ]; then
+            echo "📦 Symlinking Android SDK from shared directory..."
+            sudo ln -s "$SHARED_APP_DIR/android-sdk" /opt/android-sdk
         fi
     fi
 

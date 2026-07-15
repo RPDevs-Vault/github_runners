@@ -93,7 +93,7 @@ RUN curl -o actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz -L https://github.
 RUN ./bin/installdependencies.sh
 
 # Environment Setup for Dynamic SDKs
-ENV ANDROID_HOME=/opt/android-sdk
+ENV ANDROID_HOME=/home/runner/shared/appdata/android-sdk
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH=$PATH:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin
 
