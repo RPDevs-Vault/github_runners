@@ -64,7 +64,7 @@ else
     URL="https://github.com/${GH_OWNER}"
 fi
 
-./config.sh --url ${URL} --token ${REG_TOKEN} --name "${RUNNER_NAME:-custom-runner}" --labels "${RUNNER_LABELS:-linux64}" --unattended --replace
+./config.sh --url ${URL} --token ${REG_TOKEN} --name "${RUNNER_NAME:-custom-runner}" --labels "${RUNNER_LABELS:-linux64}" --runnergroup "${RUNNER_GROUP:-Default}" --unattended --replace
 
 cleanup() {
     echo "Removing runner..."

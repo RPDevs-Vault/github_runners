@@ -53,6 +53,9 @@ RUN apt-get update && apt-get install -y \
     mingw-w64 \
     gcc-aarch64-linux-gnu \
     g++-aarch64-linux-gnu \
+    gcc-multilib \
+    g++-multilib \
+    libc6-dev-i386 \
     && rm -rf /var/lib/apt/lists/*
 
 # Build wayland-protocols from source (Ubuntu 22.04 version is too old for latest Kodi)
