@@ -1,0 +1,53 @@
+name: Warm Up Dependency Caches
+
+on:
+  schedule:
+  - cron: '30 3 * * 0'   # Weekly on Sunday at 3:30 AM (staggered from housekeeping)
+  workflow_dispatch:
+
+jobs:
+  warmup-npm:
+    runs-on:
+      group: linux-builders
+      labels: [self-hosted, linux, t430]
+    steps:
+    - name: Cache Check
+      run: |
+        mkdir -p ~/.npm ~/.npm-global
+        npm config set prefix ~/.npm-global
+        npm install -g npm@latest
+        npm cache verify
+
+  warmup-go:
+    runs-on:
+      group: linux-builders
+      labels: [self-hosted, linux, t430]
+    steps:
+    - name: Cache Check
+      run: |
+        export GOPATH=$HOME/go
+        export GO111MODULE=on
+        go install github.com/spf13/cobra-cli@latest || true
+        go install github.com/yuin/goldmark@latest || true
+        go clean -modcache -cache || true
+
+  warmup-rust:
+    runs-on:
+      group: linux-builders
+      labels: [self-hosted, linux, t430]
+    steps:
+    - name: Cache Check
+      run: |
+        mkdir -p ~/.cargo
+        cargo install cargo-edit --no-default-features --features vendored-openssl || true
+
+  warmup-python:
+    runs-on:
+      group: linux-builders
+      labels: [self-hosted, linux, t430]
+    steps:
+    - name: Cache Check
+      run: |
+        mkdir -p ~/.cache/pip ~/.cache/pypoetry
+        pip install --user --upgrade pip setuptools wheel
+        pip install --user requests urllib3 poetry pydantic pytest black
