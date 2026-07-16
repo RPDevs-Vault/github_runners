@@ -15,7 +15,7 @@ Runners are perfectly duplicated across two primary organizations:
 
 ## 2-Core Manager Architecture & Unified Engines
 The workflows executed by these runners have been consolidated into a streamlined **2-Core Manager Architecture**:
-1. **ops-manager (Tier 1)**: Runs the `global-health-engine`, `archive-lifecycle-engine`, `governance-engine`, and `notification-manager`.
+1. **devops-manager (Tier 1)**: Runs the `global-health-engine`, `archive-lifecycle-engine`, `governance-engine`, and `notification-manager`.
 2. **builder-manager (Tier 2)**: Runs the `registry-manager` engine which handles dependency compilation, GHCR auditing, and OCI image mirroring.
 
 These consolidated workflows are mirrored in the `Workflows/` directory of this repository for reference.
