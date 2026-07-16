@@ -1,0 +1,29 @@
+name: Organization Dispatch Hub
+
+on:
+  schedule:
+  - cron: '0 0 * * 0'   # Weekly trigger (Sunday midnight)
+  repository_dispatch:
+    types: [upstream_update]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Specific build target to dispatch'
+        required: true
+        default: 'all'
+
+jobs:
+  dispatch-container-builds:
+    name: Trigger Container Manager Collection
+    runs-on: ubuntu-latest
+    steps:
+    - name: Emit Repository Dispatch
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        TARGET="${{ github.event.inputs.target || github.event.client_payload.target || 'all' }}"
+        echo "Emitting repository_dispatch to RPDevs-Vault/builder-manager for target: $TARGET"
+        gh api -X POST /repos/RPDevs-Vault/builder-manager/dispatches \
+          -f event_type='collect_docker_assets' \
+          -f client_payload[target]="$TARGET"
+        echo "Dispatch emitted successfully."

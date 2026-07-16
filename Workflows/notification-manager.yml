@@ -1,0 +1,80 @@
+name: Notification Manager Engine
+
+on:
+  schedule:
+  - cron: '0 2 * * *'   # Daily at 02:00
+  workflow_dispatch:
+
+jobs:
+  manage-notifications:
+    name: Streamline and Analyze Notifications
+    runs-on: ubuntu-latest
+    environment: vault-core
+    steps:
+    - name: Streamline Notifications
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        # 1. Clear notifications from outside RPDevs-Vault
+        echo "Clearing outside notifications..."
+        gh api /notifications --paginate -q '.[] | select(.repository.owner.login != "RPDevs-Vault" and .repository.owner.login != "IamRPDev") | .id' > outside_ids.txt
+        while read id; do
+          if [ -n "$id" ]; then
+            gh api -X PATCH "/notifications/threads/$id" --silent
+          fi
+        done < outside_ids.txt
+
+        # 2. Set Org Repos to Releases Only
+        echo "Setting org repos to Releases Only..."
+        gh repo list RPDevs-Vault --limit 1000 --json nameWithOwner --jq '.[].nameWithOwner' > org_repos.txt
+
+        while read repo; do
+          if [ -n "$repo" ]; then
+            gh repo watch "$repo" --releases-only || echo "Failed to watch $repo"
+          fi
+        done < org_repos.txt
+
+    - name: Analyze Notification Volume
+      # Only run this part on Sunday at 12:00 (since schedule is daily at 2:00, we'll check the day)
+      if: github.event.schedule == '0 2 * * 0' || github.event_name == 'workflow_dispatch'
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        SINCE=$(date -u -d "7 days ago" +"%Y-%m-%dT%H:%M:%SZ")
+        echo "Fetching notifications since $SINCE..."
+
+        NOTIFS=$(gh api "/notifications?all=true&since=$SINCE" --paginate --jq '.[].repository.full_name' | sort | uniq -c | sort -nr)
+
+        if [[ -z "$NOTIFS" ]]; then
+          echo "No notification activity detected this week. ✅"
+          exit 0
+        fi
+
+        REPORT="notification_heatmap.md"
+        echo "## 🔥 Notification Heatmap - Last 7 Days" > $REPORT
+        echo "This report identifies repositories with high activity that may need restrictive notification settings." >> $REPORT
+        echo "" >> $REPORT
+        echo "| Count | Repository | Recommended Action |" >> $REPORT
+        echo "| :--- | :--- | :--- |" >> $REPORT
+
+        while read -r count repo; do
+          [ -z "$count" ] && continue
+          ACTION="None"
+          if [ $count -gt 50 ]; then
+            ACTION="🚨 **Auto-Muted (Releases Only)**"
+            gh repo watch "$repo" --releases-only || echo "Failed to mute $repo"
+          elif [ $count -gt 20 ]; then
+            ACTION="⚠️ Consider 'Releases Only'"
+          fi
+          
+          echo "| $count | \`$repo\` | $ACTION |" >> $REPORT
+        done <<< "$NOTIFS"
+
+        gh issue create --repo RPDevs-Vault/ops-manager --title "Weekly Notification Heatmap" --body-file $REPORT --label "maintenance" || echo "Failed to create issue"
+
+    - name: Archive Report
+      if: github.event.schedule == '0 2 * * 0' || github.event_name == 'workflow_dispatch'
+      uses: actions/upload-artifact@v4
+      with:
+        name: notification_heatmap
+        path: notification_heatmap.md

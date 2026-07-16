@@ -1,0 +1,31 @@
+name: Heartbeat Uptime Check
+
+on:
+  schedule:
+  - cron: '0 * * * *'   # Run hourly
+  workflow_dispatch:
+
+jobs:
+  ping-endpoints:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Run Endpoints Probe
+      id: run_probe
+      run: |
+        python3 observability/probes/ping_endpoints.py
+      continue-on-error: true
+
+    - name: Dispatch Alert on Failure
+      if: steps.run_probe.outcome == 'failure'
+      env:
+        ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      run: |
+        python3 observability/alerts/webhook_notifier.py "One or more critical core endpoints are offline! Check GitHub Actions logs."

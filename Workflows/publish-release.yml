@@ -1,0 +1,39 @@
+name: Artifact Release Gateway
+
+on:
+  repository_dispatch:
+    types: [publish_artifact]
+
+jobs:
+  publish:
+    name: Publish Received Artifact
+    runs-on:
+      group: linux-builders
+      labels: [self-hosted, linux, lightweight]
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Download Artifact
+      run: |
+        echo "Downloading artifact from provided URL..."
+        curl -L -H "Authorization: Bearer ${{ secrets.SYNC_TOKEN }}" -o artifact.zip "${{ github.event.client_payload.artifact_url }}"
+
+    - name: Generate Release Tag
+      id: generate_tag
+      run: |
+        TAG_NAME="${{ github.event.client_payload.project }}-v${{ github.run_number }}"
+        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.generate_tag.outputs.tag_name }}
+        name: "Release ${{ steps.generate_tag.outputs.tag_name }}"
+        files: artifact.zip
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.SYNC_TOKEN }}

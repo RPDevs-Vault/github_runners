@@ -1,0 +1,43 @@
+name: Artifact Lifecycle Manager
+
+on:
+  schedule:
+  - cron: '0 11 * * 1'   # Weekly on Monday at 11:00
+  workflow_dispatch:
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Prune Old Artifacts
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        REPOS=$(gh repo list --limit 1000 --json nameWithOwner --jq '.[].nameWithOwner')
+
+        # Retention period in seconds (30 days)
+        RETENTION=2592000
+        NOW=$(date +%s)
+
+        for repo in $REPOS; do
+          echo "Checking artifacts for $repo..."
+          
+          # List artifacts
+          ARTIFACTS=$(gh api "/repos/$repo/actions/artifacts" --jq '.artifacts[] | {id, name, created_at}')
+          
+          if [[ -z "$ARTIFACTS" ]]; then continue; fi
+
+          echo "$ARTIFACTS" | jq -c '.' | while read -r art; do
+            ID=$(echo "$art" | jq -r '.id')
+            NAME=$(echo "$art" | jq -r '.name')
+            CREATED=$(echo "$art" | jq -r '.created_at')
+            
+            CREATED_SEC=$(date -d "$CREATED" +%s)
+            DIFF=$((NOW - CREATED_SEC))
+
+            if [[ $DIFF -gt $RETENTION ]]; then
+              echo "Deleting old artifact '$NAME' (ID: $ID) from $repo..."
+              gh api -X DELETE "/repos/$repo/actions/artifacts/$ID" --silent || echo "Failed to delete $ID"
+            fi
+          done
+        done

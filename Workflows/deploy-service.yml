@@ -1,0 +1,28 @@
+name: GitOps Deployment Dispatcher
+
+on:
+  repository_dispatch:
+    types: [trigger_deploy, chatops-deploy, chatops-rollback]
+  workflow_dispatch:
+    inputs:
+      service_name:
+        description: 'Service to deploy'
+        required: true
+        default: 'runner'
+
+jobs:
+  deploy:
+    runs-on:
+      group: linux-builders
+      labels: [self-hosted, linux, lightweight]
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Run Deploy Pipeline
+      env:
+        SERVICE_TARGET: ${{ github.event.client_payload.service || 
+          github.event.inputs.service_name }}
+      run: |
+        chmod +x deploy/scripts/deploy_service.sh
+        ./deploy/scripts/deploy_service.sh "$SERVICE_TARGET" "true" # Run in dry-run mode for verification

@@ -1,0 +1,97 @@
+name: Compile Mageddo DPS (aarch64)
+
+on:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/dns-proxy-server-aarch64
+
+jobs:
+  build-and-push:
+    runs-on: [self-hosted, linux64, llmadmin01]
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout Mageddo Source
+        uses: actions/checkout@v4
+        with:
+          repository: mageddo/dns-proxy-server
+          ref: master
+
+      - name: Generate Version Number
+        id: version
+        run: echo "VERSION=$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Compile Java Artifacts
+        run: |
+          chmod +x ./gradlew
+          ./gradlew clean build -x test
+
+      - name: Authenticate to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GH_TOKEN }}
+
+      - name: Execute Mageddo Docker Build Chain
+        run: |
+          # 1. Ensure target staging structures exist
+          mkdir -p ./build/artifacts/native-image-source/
+          
+          # 2. Locate the compiled fat JAR and stage it for Docker context ingestion
+          FOUND_JAR=$(find build/libs/ -name "dns-proxy-server*.jar" ! -name "*javadoc*" ! -name "*sources*" | head -n 1)
+          if [ -z "$FOUND_JAR" ]; then
+            echo "[CRITICAL ERROR] Compiled application JAR could not be located in build/libs/"
+            exit 1
+          fi
+          cp "$FOUND_JAR" ./build/artifacts/native-image-source/dns-proxy-server.jar
+          
+          # 3. Build the aarch64 native compilation sandbox environment (Compiles the binary INSIDE the image)
+          docker compose build build-linux-aarch64
+          
+          # 4. ARTIFACT EXTRACTION BRIDGE
+          mkdir -p ./build/artifacts/linux-aarch64/
+          
+          # Spin up the builder image, mount the host directory, and copy the relocated binary out to the GitHub runner
+          docker compose run --rm --entrypoint "" \
+            -v ${{ github.workspace }}/build/artifacts/linux-aarch64:/output \
+            build-linux-aarch64 cp /app/build/artifacts/linux-aarch64/dns-proxy-server /output/
+          
+          # Verify extraction succeeded
+          ls -lha ./build/artifacts/linux-aarch64/
+          
+          # 5. Package the extracted static binary into the minimal execution image
+          docker compose build image-linux-aarch64
+
+      - name: Add OCI Label, Tag and Push to GHCR
+        run: |
+          LOWER_REPO=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+          
+          # Create inline Dockerfile.label to apply source repository metadata
+          printf "FROM defreitas/dns-proxy-server:snapshot-aarch64\nLABEL org.opencontainers.image.source=\"https://github.com/${{ github.repository }}\"\n" > Dockerfile.label
+          
+          # Build labeled image with latest and version tags
+          docker build -f Dockerfile.label -t $LOWER_REPO:latest -t $LOWER_REPO:${{ steps.version.outputs.VERSION }} .
+          
+          # Push both tags
+          docker push $LOWER_REPO:latest
+          docker push $LOWER_REPO:${{ steps.version.outputs.VERSION }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "dns-proxy-server-aarch64-${{ steps.version.outputs.VERSION }}" \
+            --title "Release dns-proxy-server-aarch64-${{ steps.version.outputs.VERSION }}" \
+            --notes "Mageddo DPS aarch64 release at version ${{ steps.version.outputs.VERSION }}"

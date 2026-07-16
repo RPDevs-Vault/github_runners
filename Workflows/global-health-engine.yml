@@ -1,0 +1,146 @@
+name: Global Health Engine
+
+on:
+  schedule:
+  - cron: '0 8 * * 1'   # Weekly on Monday at 08:00
+  workflow_dispatch:
+
+jobs:
+  audit-actions:
+    name: Audit Global Actions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Run Actions Auditor
+      env:
+        GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+      run: |
+        if [ -f "action/audit_actions.py" ]; then
+          chmod +x action/audit_actions.py
+          python3 action/audit_actions.py
+        fi
+
+    - name: Commit Action Audit
+      run: |
+        git config user.name "RPDevs Bot"
+        git config user.email "bot@iamrp.dev"
+        git add README.md
+        if ! git diff-index --quiet HEAD; then
+          git commit -m "chore: update global actions audit [skip ci]"
+          git pull origin main --rebase
+          git push origin main
+        fi
+
+  aggregate-health:
+    name: Aggregate Global Health Dashboard
+    needs: [audit-actions]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.SYNC_TOKEN }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Generate Health Report
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        if [ -f "cockpit/aggregate_health.py" ]; then
+          chmod +x cockpit/aggregate_health.py
+          python3 cockpit/aggregate_health.py
+        fi
+
+        REPOS=$(gh repo list RPDevs-Vault --limit 1000 --json nameWithOwner,isFork,visibility,isArchived --jq '.')
+
+        TOTAL_REPOS=$(echo "$REPOS" | jq 'length')
+        TOTAL_FORKS=$(echo "$REPOS" | jq '[.[] | select(.isFork == true)] | length')
+        TOTAL_STANDALONE=$(echo "$REPOS" | jq '[.[] | select(.isFork == false)] | length')
+        TOTAL_ARCHIVED=$(echo "$REPOS" | jq '[.[] | select(.isArchived == true)] | length')
+
+        REPORT="## 🛡️ Repository Health Overview\n\n"
+        REPORT+="| Metric | Count |\n"
+        REPORT+="| :--- | :--- |\n"
+        REPORT+="| **Total Repositories** | $TOTAL_REPOS |\n"
+        REPORT+="| **Total Forks** | $TOTAL_FORKS |\n"
+        REPORT+="| **Standalone Projects** | $TOTAL_STANDALONE |\n"
+        REPORT+="| **Archived Projects** | $TOTAL_ARCHIVED |\n\n"
+
+        REPORT+="## 🚀 Build Fleet Status (builder-manager)\n\n"
+        REPORT+="| Workflow | Status | Last Run |\n"
+        REPORT+="| :--- | :--- | :--- |\n"
+
+        BUILDS=$(gh run list --repo RPDevs-Vault/builder-manager --limit 5 --json name,conclusion,status,createdAt,url --jq '.[]' 2>/dev/null || echo "")
+        if [[ ! -z "$BUILDS" ]]; then
+          echo "$BUILDS" | jq -c '.' | while read -r run; do
+            NAME=$(echo "$run" | jq -r '.name')
+            CONC=$(echo "$run" | jq -r '.conclusion // .status')
+            DATE=$(echo "$run" | jq -r '.createdAt')
+            URL=$(echo "$run" | jq -r '.url')
+
+            case "$CONC" in
+              success) ICON="✅" ;;
+              failure) ICON="❌" ;;
+              cancelled) ICON="⚪" ;;
+              *) ICON="⏳" ;;
+            esac
+
+            REPORT+="| [$NAME]($URL) | $ICON $CONC | $DATE |\n"
+          done
+        else
+          REPORT+="| No recent builds found | - | - |\n"
+        fi
+        REPORT+="\n"
+
+        UNHEALTHY=$(echo "$REPOS" | jq -r '.[] | select(.isArchived == false) | select(.description == null or .description == "") | .nameWithOwner')
+
+        REPORT+="### ⚠️ Attention Required\n"
+        if [[ ! -z "$UNHEALTHY" ]]; then
+          REPORT+="The following repositories are missing descriptions:\n"
+          for r in $UNHEALTHY; do
+            REPORT+="- \`$r\`\n"
+          done
+        else
+          REPORT+="All active repositories have metadata populated. ✅\n"
+        fi
+
+        mkdir -p /mnt/sharedroot/github_runners/reports
+        echo -e "$REPORT" > /mnt/sharedroot/github_runners/reports/global_health_report.md
+        
+        if ! grep -q "<!-- HEALTH_DASHBOARD_START -->" README.md; then
+          echo -e "\n<!-- HEALTH_DASHBOARD_START -->\n<!-- HEALTH_DASHBOARD_END -->" >> README.md
+        fi
+
+        awk -v report="$REPORT" '
+          /<!-- HEALTH_DASHBOARD_START -->/ { print; print report; skip=1; next }
+          /<!-- HEALTH_DASHBOARD_END -->/ { skip=0 }
+          !skip { print }
+        ' README.md > README.tmp && mv README.tmp README.md
+
+    - name: Commit & Push Health Dashboard
+      run: |
+        git config user.name "Health Bot"
+        git config user.email "actions@github.com"
+        git add README.md
+        if ! git diff --staged --quiet; then
+          git commit -m "docs: auto-update health dashboard [skip ci]"
+          git pull origin main --rebase
+          git push origin main
+        fi

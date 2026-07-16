@@ -1,0 +1,34 @@
+name: Runner Utilization & Cost Analytics
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Run weekly on Sundays
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  analyze-telemetry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Gather Runner Data
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          echo "Gathering workflow data across organizations..."
+          echo "# Runner Telemetry Report" > report.md
+          echo "## Active Runners" >> report.md
+          gh api orgs/RPDevs-Vault/actions/runners --paginate | jq -r '.runners[] | "- **\(.name)** (OS: \(.os), Status: \(.status))"' >> report.md
+          echo "## Recent Workflow Runs (ops-manager)" >> report.md
+          gh api /repos/RPDevs-Vault/ops-manager/actions/runs --paginate -q '.workflow_runs[] | "- \(.name) (\(.conclusion)) - \(.created_at)"' | head -n 10 >> report.md
+
+      - name: Create Issue Report
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: Weekly Runner Telemetry Report
+          content-filepath: ./report.md
+          labels: telemetry, report

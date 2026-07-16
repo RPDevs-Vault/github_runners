@@ -1,0 +1,34 @@
+name: Label Standardizer
+
+on:
+  schedule:
+  - cron: '0 3 * * 1'   # Weekly on Monday at 03:00
+  workflow_dispatch:
+
+jobs:
+  standardize:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Standardize Labels
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        # Define standard labels (Name:Color:Description)
+        LABELS=(
+          "upstream-sync:1d76db:Automated synchronization with upstream"
+          "security:d73a4a:Security related issues"
+          "maintenance:fbca04:General maintenance and chores"
+          "bug:d73a4a:Something isn't working"
+          "enhancement:a2eeef:New feature or request"
+          "stale:6c757d:Inactive or outdated issue/PR"
+        )
+
+        REPOS=$(gh repo list --limit 1000 --limit 1000 --json nameWithOwner --jq '.[].nameWithOwner')
+
+        for repo in $REPOS; do
+          echo "Standardizing labels for $repo..."
+          for label_data in "${LABELS[@]}"; do
+            IFS=":" read -r name color desc <<< "$label_data"
+            gh label create "$name" --repo "$repo" --color "$color" --description "$desc" --force || echo "Failed to update label $name on $repo"
+          done
+        done

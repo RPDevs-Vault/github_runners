@@ -11,16 +11,19 @@ on:
 env:
   REGISTRY: ghcr.io
   ORG: rpdevs-vault
+  CACHE_BASE: /mnt/sharedroot/github_runners/shared
 
 jobs:
   build-and-scan:
+    name: Build & Scan Base Images
     runs-on:
       group: llmadmin01
       labels: [self-hosted, linux, t430]
     permissions:
-      contents: read
+      contents: write
       packages: write
       security-events: write
+
     strategy:
       matrix:
         image: [alpine, ubuntu]
@@ -29,6 +32,10 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - name: Generate Version Number
+      id: version
+      run: echo "VERSION=$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -47,17 +54,25 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.ORG }}/base-${{ matrix.image }}
         tags: |
           type=raw,value=latest
+          type=raw,value=${{ steps.version.outputs.VERSION }}
           type=sha,format=short
+        labels: |
+          org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
-    - name: Build Docker image
+    - name: Ensure Local Cache Directory Exists
+      run: mkdir -p ${{ env.CACHE_BASE }}/docker-cache/base-${{ matrix.image }}
+
+    - name: Build Docker image (Load Locally for Scanning)
       uses: docker/build-push-action@v5
       with:
         context: ./container/base-images/${{ matrix.image }}
         load: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+        # Pull from the local cache, but don't overwrite it until the final push step
+        cache-from: type=local,src=${{ env.CACHE_BASE }}/docker-cache/base-${{ matrix.image }}
 
-    - name: Run Trivy scanner
+    - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: '${{ env.REGISTRY }}/${{ env.ORG }}/base-${{ matrix.image }}:latest'
@@ -66,10 +81,21 @@ jobs:
         severity: 'CRITICAL,HIGH'
         exit-code: '0'
 
-    - name: Push Docker image
+    - name: Push Docker image and Update Cache
       uses: docker/build-push-action@v5
       with:
         context: ./container/base-images/${{ matrix.image }}
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=local,src=${{ env.CACHE_BASE }}/docker-cache/base-${{ matrix.image }}
+        # Push successful layers into the permanent NFS cache
+        cache-to: type=local,dest=${{ env.CACHE_BASE }}/docker-cache/base-${{ matrix.image }},mode=max
+
+    - name: Create GitHub Release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create "base-${{ matrix.image }}-${{ steps.version.outputs.VERSION }}" \
+          --title "Release base-${{ matrix.image }}-${{ steps.version.outputs.VERSION }}" \
+          --notes "Base image release for ${{ matrix.image }} at version ${{ steps.version.outputs.VERSION }}"

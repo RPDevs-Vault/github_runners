@@ -33,7 +33,6 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
       run: |
-        # Assess fallback or escalation to llmadmin01
         RUNS=$(gh api /repos/${{ github.repository }}/actions/workflows/build-engine.yml/runs?status=success\&per_page=3)
         TOTAL_DURATION=0
         COUNT=0
@@ -51,15 +50,15 @@ jobs:
         if [ $COUNT -gt 0 ]; then
           AVG=$((TOTAL_DURATION / COUNT))
           if [ $AVG -gt 900 ]; then
-             echo "Average duration > 15m. Escalating to llmadmin01."
-             echo "runner={\"group\":\"linux-builders\",\"labels\":[\"self-hosted\",\"linux\",\"llmadmin01\"]}" >> $GITHUB_OUTPUT
+             echo "Average duration > 15m. Escalating to heavy lifter."
+             echo "runner={\"group\":\"llmadmin01\",\"labels\":[\"self-hosted\",\"linux\",\"heavy\"]}" >> $GITHUB_OUTPUT
           else
-             echo "Average duration <= 15m. Routing to t430."
-             echo "runner={\"group\":\"linux-builders\",\"labels\":[\"self-hosted\",\"linux\",\"t430\"]}" >> $GITHUB_OUTPUT
+             echo "Average duration <= 15m. Routing to lite node."
+             echo "runner={\"group\":\"T430\",\"labels\":[\"self-hosted\",\"linux\",\"lite\"]}" >> $GITHUB_OUTPUT
           fi
         else
-          echo "No historical data. Defaulting to t430."
-          echo "runner={\"group\":\"linux-builders\",\"labels\":[\"self-hosted\",\"linux\",\"t430\"]}" >> $GITHUB_OUTPUT
+          echo "No historical data. Defaulting to lite node."
+          echo "runner={\"group\":\"T430\",\"labels\":[\"self-hosted\",\"linux\",\"lite\"]}" >> $GITHUB_OUTPUT
         fi
 
     - id: set-matrix
@@ -82,6 +81,9 @@ jobs:
       matrix:
         project: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
     runs-on: ${{ fromJSON(needs.setup-matrix.outputs.runner) }}
+    permissions:
+      contents: write
+      packages: write
 
     steps:
     - name: Checkout
@@ -89,11 +91,20 @@ jobs:
       with:
         token: ${{ secrets.SYNC_TOKEN }}
 
+    - name: Generate Version Number
+      id: version
+      run: |
+        if [ "${{ matrix.project.name }}" = "dummy" ]; then
+          echo "VERSION=dummy" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        echo "VERSION=$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
+
     - name: Pre-Flight Validation
       run: |
-        if [ "${{ matrix.project.name }}" == "dummy" ]; then exit 0; fi
+        if [ "${{ matrix.project.name }}" = "dummy" ]; then exit 0; fi
         DIR="${{ matrix.project.dir }}"
-        if [[ "${{ matrix.project.source }}" == "local" || "${{ matrix.project.source }}" == "runner" ]]; then
+        if [ "${{ matrix.project.source }}" = "local" ] || [ "${{ matrix.project.source }}" = "runner" ]; then
           if [ ! -d "$DIR" ]; then
             echo "::error::Source directory $DIR not found!"
             exit 1
@@ -101,12 +112,12 @@ jobs:
         fi
 
     - name: Mount Remote NFS Cache via Cloudflare Tunnel
-      if: "!contains(runner.labels, 'self-hosted')"
+      if: "!contains(needs.setup-matrix.outputs.runner, 'self-hosted')"
       env:
         CF_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
         CF_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
       run: |
-        if [ "${{ matrix.project.name }}" == "dummy" ]; then exit 0; fi
+        if [ "${{ matrix.project.name }}" = "dummy" ]; then exit 0; fi
         sudo apt-get update && sudo apt-get install -y nfs-common
         curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
         sudo dpkg -i cloudflared.deb
@@ -114,13 +125,34 @@ jobs:
         export TUNNEL_SERVICE_TOKEN_SECRET=$CF_CLIENT_SECRET
         cloudflared access tcp --hostname nfs-sharedroot.iamrp.dev --url 127.0.0.1:2049 &
         sleep 5
-        sudo mkdir -p /home/runner/shared
-        sudo mount -t nfs -o port=2049,soft,timeo=100,retrans=2 127.0.0.1:/sharedroot /home/runner/shared
+        sudo mkdir -p /mnt/shared
+        sudo mount -t nfs -o port=2049,soft,timeo=100,retrans=2 127.0.0.1:/sharedroot/github_runners/shared /mnt/shared
+
+    - name: Set Universal Cache Path
+      id: cache-path
+      run: |
+        if [ "${{ contains(needs.setup-matrix.outputs.runner, 'self-hosted') }}" = "true" ]; then
+          echo "CACHE_BASE=/mnt/sharedroot/github_runners/shared" >> $GITHUB_ENV
+        else
+          echo "CACHE_BASE=/mnt/shared" >> $GITHUB_ENV
+        fi
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
+      with:
+        # 🚀 MULTITHREADING ACTIVATED: Removed the core-count restriction
+        buildkitd-config-inline: |
+          [[worker.oci.gcpolicy]]
+            keepBytes = "35GB"
+            keepDuration = "336h"
+            filters = [ "type==source.local", "type==exec.cachemount", "type==custom.source"]
+          [[worker.oci.gcpolicy]]
+            all = true
+            keepBytes = "35GB"
+
     - name: Login to GHCR
       uses: docker/login-action@v3
       with:
@@ -130,41 +162,62 @@ jobs:
 
     - name: Prepare Source
       run: |
-        if [ "${{ matrix.project.name }}" == "dummy" ]; then exit 0; fi
-        NAME="${{ matrix.project.name }}"
+        if [ "${{ matrix.project.name }}" = "dummy" ]; then exit 0; fi
         DIR="${{ matrix.project.dir }}"
         URL="${{ matrix.project.source_url || matrix.project.url }}"
         BRANCH="${{ matrix.project.branch || 'main' }}"
-        if [[ "${{ matrix.project.source }}" == "manifest" || "${{ matrix.project.source }}" == "thirdparty" ]]; then
+        if [ "${{ matrix.project.source }}" = "manifest" ] || [ "${{ matrix.project.source }}" = "thirdparty" ]; then
           mkdir -p build
           rm -rf "$DIR"
-          git clone --depth 1 --branch "$BRANCH" "$URL" "$DIR" || git clone --depth 1 --branch "master" "$URL" "$DIR" || echo "Failed to clone $NAME"
+          git clone --depth 1 --branch "$BRANCH" "$URL" "$DIR" || git clone --depth 1 --branch "master" "$URL" "$DIR"
+        fi
+
+    - name: Patch Upstream Dockerfiles (Pre-Build Optimization)
+      run: |
+        if [ "${{ matrix.project.name }}" = "dummy" ]; then exit 0; fi
+        NAME="${{ matrix.project.name }}"
+        DIR="${{ matrix.project.dir }}"
+        
+        # POSIX-compliant lowercase conversion
+        NAME_LOWER=$(echo "$NAME" | tr '[:upper:]' '[:lower:]')
+        
+        # Only run this patch if the project is Ollama
+        if [ "$NAME_LOWER" = "ollama" ]; then
+          echo "🛠️ Patching Ollama Dockerfile for Layer Optimization..."
+          DOCKERFILE=$(ls "$DIR" | grep -i "^dockerfile$" | head -n 1)
+          
+          # Use sed to find the end of the DNF install chain and append the cache cleanup
+          sed -i 's/&& dnf install -y libnccl libnccl-devel/&& dnf install -y libnccl libnccl-devel \\\\\n    && dnf clean all \\\\\n    && rm -rf \/var\/cache\/dnf/g' "$DIR/$DOCKERFILE"
+          
+          echo "✅ Patch applied successfully. Here is the modified CUDA block:"
+          grep -A 3 -B 3 "dnf clean all" "$DIR/$DOCKERFILE" || true
         fi
 
     - name: Archive and Organize
       run: |
-        if [ "${{ matrix.project.name }}" == "dummy" ]; then exit 0; fi
+        if [ "${{ matrix.project.name }}" = "dummy" ]; then exit 0; fi
         NAME="${{ matrix.project.name }}"
         DIR="${{ matrix.project.dir }}"
+        
         if [ -d "$DIR" ]; then
           rm -rf "$DIR/.git" 2>/dev/null || true
           mkdir -p "containers/$NAME"
-          IMAGE_NAME="ghcr.io/rpdevs-vault/${NAME,,}"
+          
+          # POSIX-compliant lowercase conversion
+          NAME_LOWER=$(echo "$NAME" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME="ghcr.io/rpdevs-vault/$NAME_LOWER"
+          
           echo "docker run -d --name $NAME $IMAGE_NAME:latest" > "containers/$NAME/command.txt"
           
-          echo "# 📦 $NAME" > "containers/$NAME/README.md"
-          echo "- **Image:** \`$IMAGE_NAME:latest\`" >> "containers/$NAME/README.md"
-          echo "- **Type:** ${{ matrix.project.source }}" >> "containers/$NAME/README.md"
-          echo "- **Registry:** [GHCR](https://github.com/orgs/RPDevs-Vault/packages/container/${NAME,,})" >> "containers/$NAME/README.md"
-          echo "- **Last Built:** \$(date)" >> "containers/$NAME/README.md"
-
           mkdir -p images
           echo "# 📦 $NAME" > "images/$NAME.md"
           echo "Image: \`$IMAGE_NAME:latest\`" >> "images/$NAME.md"
-          echo "Registry: [GHCR](https://github.com/orgs/RPDevs-Vault/packages/container/${NAME,,})" >> "images/$NAME.md"
 
+          # Git config with explicitly disabled GPG signing for the bot
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config commit.gpgsign false
+
           git add .
           if ! git diff --staged --quiet; then
             git commit -m "chore(archiver): update $NAME source and assets"
@@ -175,27 +228,43 @@ jobs:
 
     - name: Build and Push
       run: |
-        if [ "${{ matrix.project.name }}" == "dummy" ]; then exit 0; fi
+        if [ "${{ matrix.project.name }}" = "dummy" ]; then exit 0; fi
         NAME="${{ matrix.project.name }}"
         DIR="${{ matrix.project.dir }}"
-        IMAGE_NAME="ghcr.io/rpdevs-vault/${NAME,,}"
+        
+        # POSIX-compliant lowercase conversion
+        NAME_LOWER=$(echo "$NAME" | tr '[:upper:]' '[:lower:]')
+        IMAGE_NAME="ghcr.io/rpdevs-vault/$NAME_LOWER"
 
         if [ -f "$DIR/Dockerfile" ] || [ -f "$DIR/dockerfile" ]; then
           DOCKERFILE=$(ls "$DIR" | grep -i "^dockerfile$" | head -n 1)
           PLATFORMS="${{ matrix.project.platforms && join(matrix.project.platforms, ',') || 'linux/amd64,linux/arm64' }}"
+          
+          mkdir -p ${CACHE_BASE}/docker-cache/${{ matrix.project.name }}
+          
           docker buildx build --platform "$PLATFORMS" \
-            --cache-from type=local,src=/home/runner/shared/docker-cache/${{ matrix.project.name }} \
-            --cache-to type=local,dest=/home/runner/shared/docker-cache/${{ matrix.project.name }},mode=max \
-            -f "$DIR/$DOCKERFILE" -t "$IMAGE_NAME:latest" --push "$DIR"
+            --cache-from type=local,src=${CACHE_BASE}/docker-cache/${{ matrix.project.name }} \
+            --cache-to type=local,dest=${CACHE_BASE}/docker-cache/${{ matrix.project.name }},mode=max \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            -f "$DIR/$DOCKERFILE" -t "$IMAGE_NAME:latest" -t "$IMAGE_NAME:${{ steps.version.outputs.VERSION }}" --push "$DIR"
         fi
 
-    - name: Cleanup NFS and Cloudflare Tunnel
-      if: always() && !contains(runner.labels, 'self-hosted')
+    - name: Create GitHub Release
+      if: matrix.project.name != 'dummy'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        sudo umount -f /home/runner/shared || true
+        gh release create "${{ matrix.project.name }}-${{ steps.version.outputs.VERSION }}" \
+          --title "Release ${{ matrix.project.name }}-${{ steps.version.outputs.VERSION }}" \
+          --notes "Container build release for ${{ matrix.project.name }} at version ${{ steps.version.outputs.VERSION }}"
+
+    - name: Cleanup NFS and Cloudflare Tunnel
+      if: always() && !contains(needs.setup-matrix.outputs.runner, 'self-hosted')
+      run: |
+        sudo umount -f /mnt/shared || true
         sudo pkill -f cloudflared || true
 
     - name: Runner Housekeeping
-      if: always() && contains(runner.labels, 'self-hosted')
+      if: always() && contains(needs.setup-matrix.outputs.runner, 'self-hosted')
       run: |
         docker image prune -f --filter "label=com.github.actions.runner" || true

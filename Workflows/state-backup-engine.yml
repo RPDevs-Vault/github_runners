@@ -1,0 +1,57 @@
+name: Disaster Recovery & State Backup
+on:
+  schedule:
+    - cron: '0 2 * * *' # Run daily at 2am
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup-state:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Mount NFS via Cloudflare Tunnel
+        env:
+          CF_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y nfs-common
+          curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared.deb
+          export TUNNEL_SERVICE_TOKEN_ID=$CF_CLIENT_ID
+          export TUNNEL_SERVICE_TOKEN_SECRET=$CF_CLIENT_SECRET
+          cloudflared access tcp --hostname nfs-sharedroot.iamrp.dev --url 127.0.0.1:2049 &
+          sleep 5
+          sudo mkdir -p /mnt/sharedroot/github_runners/backups
+          sudo mount -t nfs -o port=2049,soft,timeo=100,retrans=2 127.0.0.1:/sharedroot/github_runners/backups /mnt/sharedroot/github_runners/backups
+
+      - name: Export GitHub Configuration State
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          echo "Exporting organization settings, repository rules, and runner configurations..."
+          mkdir -p backup-data
+          # Fetch list of repos
+          gh repo list RPDevs-Vault --json name,description,visibility > backup-data/repos.json
+          # Fetch organization details
+          gh api orgs/RPDevs-Vault > backup-data/org_details.json
+          # Fetch runner details
+          gh api orgs/RPDevs-Vault/actions/runners > backup-data/runners.json
+
+      - name: Copy to NFS Backup Location
+        run: |
+          BACKUP_DIR="/mnt/sharedroot/github_runners/backups/state-$(date +%Y%m%d%H%M%S)"
+          sudo mkdir -p "$BACKUP_DIR"
+          sudo cp -r backup-data/* "$BACKUP_DIR/"
+          echo "Backup copied to $BACKUP_DIR"
+
+      - name: Archive State Backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-state-backup-${{ github.run_id }}
+          path: backup-data/
+          retention-days: 90

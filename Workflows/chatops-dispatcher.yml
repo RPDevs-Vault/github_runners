@@ -1,0 +1,35 @@
+name: ChatOps Command Gateway
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  dispatch:
+    if: ${{ !github.event.issue.pull_request && startsWith(github.event.comment.body, '/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse Command
+        id: parse
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          COMMAND=$(echo "$COMMENT" | awk '{print $1}')
+          ARGS=$(echo "$COMMENT" | cut -s -d ' ' -f 2-)
+          echo "command=$COMMAND" >> $GITHUB_OUTPUT
+          echo "args=$ARGS" >> $GITHUB_OUTPUT
+
+      - name: Route Command
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          echo "Received command: ${{ steps.parse.outputs.command }}"
+          echo "With args: ${{ steps.parse.outputs.args }}"
+          # Dispatch event based on command parsed
+          if [ "${{ steps.parse.outputs.command }}" = "/deploy" ]; then
+             echo "Triggering deployment..."
+             gh api repos/${{ github.repository }}/dispatches -f event_type=chatops-deploy -F client_payload[args]="${{ steps.parse.outputs.args }}"
+          elif [ "${{ steps.parse.outputs.command }}" = "/rollback" ]; then
+             echo "Triggering rollback..."
+             gh api repos/${{ github.repository }}/dispatches -f event_type=chatops-rollback -F client_payload[args]="${{ steps.parse.outputs.args }}"
+          else
+             echo "Unknown command."
+          fi

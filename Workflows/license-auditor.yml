@@ -1,0 +1,51 @@
+name: License Auditor
+
+on:
+  schedule:
+  - cron: '0 8 * * 1'   # Weekly on Monday at 08:00
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Audit Missing Licenses
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        # Only select repositories that are NOT forks
+        REPOS=$(gh repo list --limit 1000 --json nameWithOwner,isFork --jq '.[] | select(.isFork == false) | .nameWithOwner')
+        REPORT="license_audit_report.md"
+
+        # Initialize report
+        echo "## ⚖️ License Audit Report" > "$REPORT"
+        echo "The following repositories (non-forks) are missing a LICENSE file:" >> "$REPORT"
+        echo "" >> "$REPORT"
+        echo "| Repository | Action Required |" >> "$REPORT"
+        echo "| :--- | :--- |" >> "$REPORT"
+
+        MISSING_COUNT=0
+        for repo in $REPOS; do
+          echo "Checking $repo..."
+          # Check if repo has a license
+          if gh api "/repos/$repo/license" --silent >/dev/null 2>&1; then
+            HAS_LICENSE="true"
+          else
+            HAS_LICENSE="false"
+          fi
+          
+          if [[ "$HAS_LICENSE" == "false" ]]; then
+            echo "|$repo|Please add a LICENSE file.|" >> "$REPORT"
+            MISSING_COUNT=$((MISSING_COUNT + 1))
+          fi
+        done
+
+        if [ "$MISSING_COUNT" -gt 0 ]; then
+          gh issue create --repo RPDevs-Vault/ops-manager --title "License Audit: $MISSING_COUNT projects missing licenses" --body-file "$REPORT" --label "governance"
+        fi
+
+    - name: Archive Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: license_audit_report
+        path: license_audit_report.md

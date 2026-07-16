@@ -1,0 +1,38 @@
+name: Cleanup Merged Branches
+
+on:
+  schedule:
+  - cron: '0 1 * * 0'   # Weekly on Sunday at 01:00
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    environment: vault-core
+    steps:
+    - name: Delete Merged Branches
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        REPOS=$(gh repo list --limit 1000 --limit 1000 --json nameWithOwner --jq '.[].nameWithOwner')
+
+        for repo in $REPOS; do
+          echo "Processing $repo..."
+          DEFAULT_BRANCH=$(gh repo view "$repo" --json defaultBranchRef --jq '.defaultBranchRef.name')
+          
+          # Get all branches except the default one
+          BRANCHES=$(gh api "/repos/$repo/branches" --jq '.[] | select(.name != "'"$DEFAULT_BRANCH"'") | .name')
+          
+          for branch in $BRANCHES; do
+            # Check if branch is merged into default
+            # Using the comparison API: if the branch is 'behind' or 'identical' to default, it's merged.
+            STATUS=$(gh api "/repos/$repo/compare/$DEFAULT_BRANCH...$branch" --jq '.status' 2>/dev/null || echo "unknown")
+            
+            if [[ "$STATUS" == "behind" || "$STATUS" == "identical" ]]; then
+              echo "Branch $branch in $repo is merged. Deleting..."
+              gh api -X DELETE "/repos/$repo/git/refs/heads/$branch" || echo "Failed to delete $branch"
+            else
+              echo "Branch $branch in $repo is NOT merged ($STATUS). Skipping."
+            fi
+          done
+        done

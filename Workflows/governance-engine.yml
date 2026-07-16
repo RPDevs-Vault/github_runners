@@ -1,0 +1,67 @@
+name: Governance Engine
+
+on:
+  schedule:
+  - cron: '0 6 * * 1'   # Weekly on Monday at 06:00
+  workflow_dispatch:
+
+jobs:
+  enforce-governance:
+    name: Enforce Governance, Policy, and Security
+    runs-on: ubuntu-latest
+    environment: vault-core
+    steps:
+    - name: Enforce Policies
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        REPOS=$(gh repo list RPDevs-Vault --limit 1000 --json nameWithOwner,isFork,visibility --jq '.')
+
+        echo "$REPOS" | jq -c '.[]' | while read -r repo_json; do
+          repo=$(echo "$repo_json" | jq -r '.nameWithOwner')
+          isFork=$(echo "$repo_json" | jq -r '.isFork')
+          visibility=$(echo "$repo_json" | jq -r '.visibility')
+          
+          echo "Processing governance for $repo..."
+          
+          # 1. Branch Protection
+          DEFAULT_BRANCH=$(gh repo view "$repo" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null)
+          if [ ! -z "$DEFAULT_BRANCH" ]; then
+            gh api -X PUT "/repos/$repo/branches/$DEFAULT_BRANCH/protection" \
+              -H "Accept: application/vnd.github+json" \
+              -f "required_status_checks=null" \
+              -f "enforce_admins=null" \
+              -f "required_pull_request_reviews=null" \
+              -f "restrictions=null" \
+              -F "allow_force_pushes=false" \
+              -F "allow_deletions=false" --silent || echo "Failed branch protection for $repo"
+          fi
+
+          # 2. Security Settings (Secret Scanning)
+          if [[ "$visibility" == "PUBLIC" ]]; then
+            gh api -X PATCH "/repos/$repo" \
+              -f "security_and_analysis[secret_scanning][status]=enabled" \
+              -f "security_and_analysis[secret_scanning_push_protection][status]=enabled" --silent || echo "Failed security settings for $repo"
+          fi
+          
+          # 3. Dependabot Alerts
+          gh api -X PUT "/repos/$repo/vulnerability-alerts" --silent || echo "Failed alerts for $repo"
+          gh api -X PUT "/repos/$repo/automated-security-fixes" --silent || echo "Failed security fixes for $repo"
+          
+          # 4. Check LICENSE
+          HAS_LICENSE=$(gh api "/repos/$repo/license" --silent && echo "true" || echo "false")
+          if [[ "$HAS_LICENSE" == "false" ]]; then
+            echo "|$repo|Missing LICENSE|Alerting...|"
+          fi
+
+          # 5. Disable Wikis/Projects for forks
+          if [[ "$isFork" == "true" ]]; then
+            gh repo edit "$repo" --enable-wiki=false --enable-projects=false --silent || echo "Failed to edit $repo"
+          fi
+          
+          # 6. Email Policy Audit
+          COMMITS=$(gh api "/repos/$repo/commits" --jq '.[] | select(.commit.author.email != "rpdev@iamrp.dev" and .commit.author.email != "actions@github.com") | .commit.author.email' 2>/dev/null | sort -u || echo "")
+          if [ ! -z "$COMMITS" ]; then
+            echo "|$repo|Non-conforming emails found: $COMMITS|"
+          fi
+        done

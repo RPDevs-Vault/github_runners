@@ -1,0 +1,213 @@
+name: Archive Lifecycle Engine
+
+on:
+  schedule:
+  - cron: '0 0 * * 0'   # Weekly on Sunday at 00:00
+  workflow_dispatch:
+
+jobs:
+  auto-archive:
+    name: Auto Archive Inactive Repos
+    runs-on: ubuntu-latest
+    environment: vault-core
+    steps:
+    - name: Archive inactive repos
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        NOW=$(date +%s)
+        TWO_YEARS=$((2 * 365 * 24 * 60 * 60))
+
+        # We check both IamRPDev and RPDevs-Vault
+        for owner in "IamRPDev" "RPDevs-Vault"; do
+          echo "Scanning $owner for inactive repositories..."
+          gh repo list "$owner" --json nameWithOwner,updatedAt,isArchived,isFork,parent --limit 1000 | jq -c '.[] | select(.isArchived == false)' | while read repo; do
+            NAME=$(echo "$repo" | jq -r '.nameWithOwner')
+            UPDATED=$(echo "$repo" | jq -r '.updatedAt')
+            IS_FORK=$(echo "$repo" | jq -r '.isFork')
+            HAS_PARENT=$(echo "$repo" | jq -r '.parent != null')
+            
+            UPDATED_SEC=$(date -d "$UPDATED" +%s)
+            DIFF=$((NOW - UPDATED_SEC))
+
+            ARCHIVE=false
+            REASON=""
+
+            # Rule A: Fork where upstream is deleted
+            if [[ "$IS_FORK" == "true" && "$HAS_PARENT" == "false" ]]; then
+              ARCHIVE=true
+              REASON="Orphaned fork (upstream deleted)"
+            fi
+
+            # Rule B: Inactive for > 2 years
+            if [[ $DIFF -gt $TWO_YEARS ]]; then
+              ARCHIVE=true
+              REASON="Inactive for > 2 years (Last update: $UPDATED)"
+            fi
+
+            if [[ "$ARCHIVE" == "true" ]]; then
+              echo "Archiving $NAME: $REASON"
+              gh repo archive "$NAME" --yes || echo "Failed to archive $NAME"
+            fi
+          done
+        done
+
+  sync-forks:
+    name: Sync Active Forks
+    runs-on: ubuntu-latest
+    environment: vault-core
+    steps:
+    - name: Sync Forks
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+      run: |
+        REPOS=$(gh repo list RPDevs-Vault --limit 1000 --json nameWithOwner,isFork,isArchived --jq '.[] | select(.isFork == true and .isArchived == false) | .nameWithOwner')
+        for repo in $REPOS; do
+          echo "Syncing $repo..."
+          gh repo sync "$repo" || echo "Failed to sync $repo"
+        done
+
+  sync-archive-repos:
+    name: Sync to Archive and Vault-Archive
+    needs: [auto-archive, sync-forks]
+    runs-on: ubuntu-latest
+    environment: vault-core
+    steps:
+    - name: Checkout Vault-Archive Repository
+      uses: actions/checkout@v4
+      with:
+        repository: RPDevs-Vault/Vault-Archive
+        token: ${{ secrets.SYNC_TOKEN }}
+        fetch-depth: 0
+        path: vault_archive
+
+    - name: Checkout Archive Repository
+      uses: actions/checkout@v4
+      with:
+        repository: RPDevs-Vault/Archive
+        token: ${{ secrets.SYNC_TOKEN }}
+        fetch-depth: 0
+        path: archive
+        
+    - name: Configure Git
+      run: |
+        for repo in vault_archive archive; do
+          cd $repo
+          git config user.name "Vault Archive Bot"
+          git config user.email "actions@github.com"
+          cd ..
+        done
+
+    - name: Sync Archived Non-Forks to Vault-Archive
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        cd vault_archive
+        echo "Discovering archived non-forked RPDevs-Vault repositories..."
+        gh repo list RPDevs-Vault --archived --json nameWithOwner,isFork,name --limit 1000 --jq '.[] | select(.isFork == false) | "\(.nameWithOwner) | \(.name)"' > repos_to_archive.txt
+
+        echo "### Vault Archiver Report - $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "| Status | Repository | Path |" >> $GITHUB_STEP_SUMMARY
+        echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+
+        while IFS=" | " read -r name_with_owner repo_name; do
+          [ -z "$name_with_owner" ] && continue
+          
+          # Skip if it is the Vault-Archive itself
+          [[ "$name_with_owner" == "RPDevs-Vault/Vault-Archive" ]] && continue
+          
+          REPO_URL="https://${GH_TOKEN}@github.com/$name_with_owner.git"
+          PREFIX="repo-archive/$repo_name"
+          SUCCESS=false
+          ACTION=""
+
+          if [ ! -d "$PREFIX" ]; then
+            echo "Adding subtree for $name_with_owner at $PREFIX..."
+            if git subtree add --prefix "$PREFIX" "$REPO_URL" main --squash 2>/dev/null || \
+               git subtree add --prefix "$PREFIX" "$REPO_URL" master --squash 2>/dev/null; then
+              SUCCESS=true; ACTION="Archived"
+            fi
+          else
+            echo "Updating subtree for $name_with_owner at $PREFIX..."
+            if git subtree pull --prefix "$PREFIX" "$REPO_URL" main --squash 2>/dev/null || \
+               git subtree pull --prefix "$PREFIX" "$REPO_URL" master --squash 2>/dev/null; then
+              SUCCESS=true; ACTION="Updated"
+            fi
+          fi
+
+          if [ "$SUCCESS" = true ]; then
+            echo "| $ACTION | \`$name_with_owner\` | \`$PREFIX\` |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Failed | \`$name_with_owner\` | \`$PREFIX\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+        done < repos_to_archive.txt
+
+        git add .
+        if ! git diff --staged --quiet; then
+          git commit -m "Automated Vault Repo Archive Sync: $(date)"
+          git pull origin main --rebase
+          git push origin main
+        fi
+
+    - name: Sync Forks to Archive
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        cd archive
+        scan_forks() {
+          local target=$1
+          local type=$2
+          if [[ "$type" == "user" ]]; then
+            QUERY="query { user(login: \"$target\") { repositories(isFork: true, first: 100, affiliations: [OWNER]) { nodes { nameWithOwner parent { nameWithOwner description } } } } }"
+          else
+            QUERY="query { organization(login: \"$target\") { repositories(isFork: true, first: 100) { nodes { nameWithOwner parent { nameWithOwner description } } } } }"
+          fi
+          gh api graphql -f query="$QUERY" --jq '.data.'$type'.repositories.nodes[] | select(.parent != null) | "\(.parent.nameWithOwner) | \(.nameWithOwner) | \(.parent.description // "No description")"'
+        }
+
+        echo "Scanning IamRPDev..."
+        scan_forks "IamRPDev" "user" > forks_list.txt
+        echo "Scanning RPDevs-Vault..."
+        scan_forks "RPDevs-Vault" "organization" >> forks_list.txt
+
+        echo "### Archive Sync Report - $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "| Status | Repository | Source |" >> $GITHUB_STEP_SUMMARY
+        echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+
+        while IFS=" | " read -r source_repo my_fork desc; do
+          [ -z "$source_repo" ] && continue
+          REPO_URL="https://github.com/$source_repo.git"
+          
+          # Skip if it's the archive itself
+          [[ "$source_repo" == "RPDevs-Vault/Archive" ]] && continue
+
+          SUCCESS=false
+          ACTION=""
+
+          if [ ! -d "$source_repo" ]; then
+            echo "Adding subtree $source_repo..."
+            if git subtree add --prefix "$source_repo" "$REPO_URL" main --squash 2>/dev/null || \
+               git subtree add --prefix "$source_repo" "$REPO_URL" master --squash 2>/dev/null; then
+              SUCCESS=true; ACTION="Archived"
+            fi
+          else
+            echo "Updating subtree $source_repo..."
+            if git subtree pull --prefix "$source_repo" "$REPO_URL" main --squash 2>/dev/null || \
+               git subtree pull --prefix "$source_repo" "$REPO_URL" master --squash 2>/dev/null; then
+              SUCCESS=true; ACTION="Updated"
+            fi
+          fi
+
+          if [ "$SUCCESS" = true ]; then
+            echo "| $ACTION | \`$source_repo\` | Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Failed | \`$source_repo\` | Check logs |" >> $GITHUB_STEP_SUMMARY
+          fi
+        done < forks_list.txt
+
+        git add .
+        if ! git diff --staged --quiet; then
+          git commit -m "Automated Archive Sync: $(date)"
+          git pull origin main --rebase
+          git push origin main
+        fi

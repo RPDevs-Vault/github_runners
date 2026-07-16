@@ -1,0 +1,59 @@
+name: Stale Fork Auditor
+
+on:
+  schedule:
+  - cron: '0 4 * * 0'   # Weekly on Sunday at 04:00
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Audit Forks
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        REPOS=$(gh repo list RPDevs-Vault --limit 1000 --json nameWithOwner,isFork --jq '.[] | select(.isFork == true) | .nameWithOwner')
+        REPORT="stale_report.md"
+        echo "## Stale Fork Audit Report - $(date)" > $REPORT
+        echo "| Repository | Status | Upstream |" >> $REPORT
+        echo "| :--- | :--- | :--- |" >> $REPORT
+
+        STALE_COUNT=0
+        for repo in $REPOS; do
+          echo "Auditing $repo..."
+          PARENT_DATA=$(gh repo view "$repo" --json parent --jq '.parent')
+          
+          if [[ "$PARENT_DATA" == "null" ]]; then
+            echo "|$repo|⚠️ Not a Fork anymore|N/A|" >> $REPORT
+            STALE_COUNT=$((STALE_COUNT + 1))
+            continue
+          fi
+
+          UPSTREAM=$(echo "$PARENT_DATA" | jq -r '.nameWithOwner')
+          
+          # Check if upstream is archived
+          if gh repo view "$UPSTREAM" >/dev/null 2>&1; then
+            ARCHIVED=$(gh repo view "$UPSTREAM" --json isArchived --jq '.isArchived')
+          else
+            ARCHIVED="404"
+          fi
+          
+          if [[ "$ARCHIVED" == "true" ]]; then
+            echo "|$repo|❌ Upstream Archived|[$UPSTREAM](https://github.com/$UPSTREAM)|" >> $REPORT
+            STALE_COUNT=$((STALE_COUNT + 1))
+          elif [[ "$ARCHIVED" == "404" ]]; then
+            echo "|$repo|💀 Upstream Deleted|N/A|" >> $REPORT
+            STALE_COUNT=$((STALE_COUNT + 1))
+          fi
+        done
+
+        if [ $STALE_COUNT -gt 0 ]; then
+          gh issue create --repo RPDevs-Vault/ops-manager --title "Stale Fork Audit Report" --body-file $REPORT --label "maintenance"
+        fi
+
+    - name: Archive Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: stale_report
+        path: stale_report.md

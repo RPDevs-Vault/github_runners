@@ -1,0 +1,50 @@
+name: Project Roadmap Sync
+
+on:
+  schedule:
+  - cron: '0 1 * * *'   # Run daily at 1:00 AM
+  workflow_dispatch:
+  push:
+    branches:
+    - main
+    paths:
+    - 'project/pm_sync.py'
+    - '.github/workflows/pm-sync.yml'
+
+jobs:
+  sync-roadmap:
+    name: Sync Organization Roadmap
+    runs-on:
+      group: linux-builders
+      labels: [self-hosted, linux, lightweight]
+    permissions:
+      contents: write
+      issues: read
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Sync Issues & Roadmap
+      env:
+        GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+      run: |
+        chmod +x project/pm_sync.py
+        python3 project/pm_sync.py
+
+    - name: Commit and Push Changes
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add README.md
+        if ! git diff --staged --quiet; then
+          git commit -m "chore: auto-sync project roadmap [skip ci]"
+          git pull --rebase origin main
+          git push origin main
+        else
+          echo "No changes to commit."
+        fi
